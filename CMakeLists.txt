@@ -4,10 +4,14 @@ cmake_minimum_required(VERSION 3.10)
 project(uva-networking)
 
 add_library(uva-networking
-	${CMAKE_CURRENT_LIST_DIR}/src/networking.cpp
+	${CMAKE_CURRENT_LIST_DIR}/src/web_application.cpp
 )
 
 include_directories(${CMAKE_CURRENT_LIST_DIR})
+
+set(NETWORKING_ROOT_DIR ${CMAKE_CURRENT_LIST_DIR})
+
+include("${CMAKE_CURRENT_LIST_DIR}/networking/CMakeLists.txt")
 
 #Tests
 
