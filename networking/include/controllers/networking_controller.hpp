@@ -8,4 +8,5 @@ class networking_controller : public basic_controller
 {
 public:
     void new_project();
+    void new_controller();
 };

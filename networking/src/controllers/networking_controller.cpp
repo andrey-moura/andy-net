@@ -62,3 +62,49 @@ add_custom_command(TARGET {}
         std::cout << "Initializing git repository..." << std::endl;
     }
 }
+
+void networking_controller::new_controller()
+{
+    if(params.size() < 1) {
+        uva::console::log_error("error: missing param 'controller name'");
+        return;        
+    }
+
+    std::filesystem::path project_root = std::filesystem::current_path();
+    std::filesystem::path controller_include = project_root / "include" / "controllers";
+    std::filesystem::path controller_source = project_root / "src" / "controllers";
+
+    if(!std::filesystem::exists(controller_include) || !std::filesystem::exists(controller_source)) {
+        uva::console::log_error("error: cannot find controllers folder");
+        return;
+    }
+
+    std::string controller_name = params[0];
+
+    static std::string controller_header_format =
+R"~~~(#include <web_application.hpp>
+
+using namespace uva;
+using namespace routing;
+using namespace networking;
+
+class {}_controller : public basic_controller
+{{
+public:
+}};
+)~~~";
+
+    static std::string controller_source_format =
+R"~~~(#include <{}_controller.hpp>
+
+#include <iostream>
+
+#include <console.hpp>
+#include <file.hpp>
+#include <core.hpp>
+
+)~~~";
+
+    uva::file::write_all_text(controller_include / (controller_name + "_controller.hpp"), std::format(controller_header_format, controller_name));
+    uva::file::write_all_text(controller_source  / (controller_name + "_controller.cpp"), std::format(controller_source_format, controller_name));
+}

@@ -8,7 +8,7 @@ include(${CONSOLE_ROOT_DIR}/console.cmake)
 
 add_console_app(networking)
 
-target_link_libraries(networking uva-console uva-core uva-routing uva-file)
+target_link_libraries(networking uva-networking uva-console uva-core uva-routing uva-file)
 
 add_custom_command(TARGET networking 
                    POST_BUILD

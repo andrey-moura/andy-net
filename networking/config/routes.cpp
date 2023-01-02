@@ -13,4 +13,5 @@ DECLARE_CONSOLE_APPLICATION(
     //You can have C++ code here, perfect for init other libraries.
 
     ROUTE("new-project", networking_controller::new_project);
+    ROUTE("new-controller", networking_controller::new_controller);
 )
