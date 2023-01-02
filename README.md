@@ -6,7 +6,7 @@ As pre-requisite for accepting HTTPS request, you'll a certificate. To be specif
 
 * server.crt
 * server.key
-* dh2048
+* dh2048.pem
 
 For generating self signed version of the certificate, you can run: 
 (Stolen from [here](https://stackoverflow.com/questions/6452756/exception-running-boost-asio-ssl-example).)
@@ -34,3 +34,4 @@ cp server.key server.key.secure
 openssl rsa -in server.key.secure -out server.key
 openssl dhparam -out dh2048.pem 2048
 ```
+You can have then all in your resources folder, so uva will copy then to the build directory
