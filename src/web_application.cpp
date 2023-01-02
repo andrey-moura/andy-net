@@ -459,46 +459,10 @@ void web_application::init(int argc, const char **argv)
 
     m_ssl_context->set_password_callback([](size_t, asio::ssl::context::password_purpose){return "teste";});
 
-    m_ssl_context->use_certificate_chain_file("/home/andrey/Moonslate/UserTraking/resources/server.crt");
-    m_ssl_context->use_private_key_file("/home/andrey/Moonslate/UserTraking/resources/server.key", asio::ssl::context::pem);
-    m_ssl_context->use_tmp_dh_file("/home/andrey/Moonslate/UserTraking/resources/dh2048.pem");
-
-    // m_ssl_context = new asio::ssl::context(asio::ssl::context::sslv23);
-    // SSL_CTX_set_cipher_list(m_ssl_context->native_handle(), "ECDH+AESGCM:DH+AESGCM:ECDH+AES256:DH+AES256:ECDH+AES128:DH+AES:RSA+AESGCM:RSA+AES:!aNULL:!MD5:!DSS");
+    m_ssl_context->use_certificate_chain_file("server.crt");
+    m_ssl_context->use_private_key_file("server.key", asio::ssl::context::pem);
+    m_ssl_context->use_tmp_dh_file("dh2048.pem");
     
-    // m_ssl_context->set_options(
-    //       asio::ssl::context::default_workarounds
-    //     | asio::ssl::context::no_sslv2
-    //     | asio::ssl::context::no_sslv3
-    //     | asio::ssl::context::no_tlsv1
-    //     | asio::ssl::context::single_dh_use
-    //     | SSL_OP_CIPHER_SERVER_PREFERENCE
-    // );
-
-    // m_ssl_context.clear_options(asio::ssl::context::no_tlsv1_1);
-
-    // std::filesystem::path cacert = std::filesystem::absolute("cacert.pem");
-
-    // if(!std::filesystem::exists(cacert)) {
-    //     log_error("error: missing cacert file at {}", cacert.string());
-    //     cleanup();
-    //     return;
-    // }
-
-    // m_ssl_context->use_certificate_chain_file(cacert.string());
-
-    // std::filesystem::path certfile = "/home/andrey/Moonslate/UserTraking/resources/newcert.pem";
-
-    // if(!std::filesystem::exists(certfile)) {
-    //     log_error("error: missing certfile file at {}", certfile.string());
-    //     cleanup();
-    //     return;
-    // }
-
-    // m_ssl_context->use_certificate_chain_file("/home/andrey/Moonslate/UserTraking/resources/server.crt");
-    // m_ssl_context->use_private_key_file("/home/andrey/Moonslate/UserTraking/resources/server.key", asio::ssl::context::pem);
-    // m_ssl_context->use_tmp_dh_file("dh1024.pem");
-
 	asio::error_code ec;
 
 	asio::ip::tcp::resolver resolver(m_asioContext);
@@ -662,9 +626,9 @@ response &uva::networking::web_application::response::operator<<(const status_co
 
 //         context_.set_password_callback(&server::get_password);
 
-//         context_.use_certificate_chain_file("/home/andrey/Moonslate/UserTraking/resources/server.crt");
-//         context_.use_private_key_file("/home/andrey/Moonslate/UserTraking/resources/server.key", Ctx::pem);
-//         context_.use_tmp_dh_file("/home/andrey/Moonslate/UserTraking/resources/dh2048.pem");
+//         context_.use_certificate_chain_file("server.crt");
+//         context_.use_private_key_file("server.key", Ctx::pem);
+//         context_.use_tmp_dh_file("dh2048.pem");
 
 //         start_accept();
 //     }

@@ -21,7 +21,6 @@ else()
 	target_link_libraries(uva-networking ${OPENSSL_LIBRARIES})
 endif()
 
-
 #Tests
 
 #Create tests for parent project
