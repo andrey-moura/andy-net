@@ -289,7 +289,7 @@ void write_response(asio::ssl::stream<asio::ip::tcp::socket>& socket, const std:
     std::string content_type_string = content_type_to_string(content_type);
     std::string body_length_string = std::to_string(body.size());
 
-    std::string header_format =
+    const char* const header_format =
 "HTTP/1.1 {} {}\r\n"
 "Server: cow/{}\r\n"
 "Date: {}\r\n"
@@ -512,7 +512,7 @@ void web_application::init(int argc, const char **argv)
             seek_connections.push_back(connection);
         }
 
-        std::remove_if(m_connections.begin(), m_connections.end(), [&seek_connections](std::shared_ptr<web_connection>& connection){
+        m_connections.erase(std::remove_if(m_connections.begin(), m_connections.end(), [&seek_connections](std::shared_ptr<web_connection>& connection){
             auto it = std::find(seek_connections.begin(), seek_connections.end(), connection);
 
             if(it != seek_connections.end()) {
@@ -521,7 +521,7 @@ void web_application::init(int argc, const char **argv)
             }
 
             return false;
-        });
+        }), m_connections.end());
 	}
 }
 

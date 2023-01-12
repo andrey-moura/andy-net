@@ -14,12 +14,9 @@ set(NETWORKING_ROOT_DIR ${CMAKE_CURRENT_LIST_DIR})
 
 include("${CMAKE_CURRENT_LIST_DIR}/networking/CMakeLists.txt")
 
-if(WIN32 OR WIN64)
-else()
-	find_package(OpenSSL REQUIRED)
-	include_directories(${OPENSSL_INCLUDE_DIR})
-	target_link_libraries(uva-networking ${OPENSSL_LIBRARIES})
-endif()
+find_package(OpenSSL REQUIRED)
+include_directories(${OPENSSL_INCLUDE_DIR})
+target_link_libraries(uva-networking ${OPENSSL_LIBRARIES})
 
 #Tests
 
