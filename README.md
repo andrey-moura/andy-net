@@ -2,7 +2,9 @@
 
 ## HTTPS
 
-As pre-requisite for accepting HTTPS request, you'll a certificate. To be specific, the following ones:
+For accepting HTTPS request, you'll need OpenSSL libraries. You can install them via apt or download pre-compilated binaries for Windows [here](https://https://wiki.openssl.org/index.php/Binaries).)
+
+For accepting HTTPS request, you'll need a certificate. To be specific, the following ones:
 
 * server.crt
 * server.key

@@ -18,7 +18,9 @@ void networking_controller::new_project()
 
     std::filesystem::path project_root = std::filesystem::absolute(project_name.to_s());
     std::filesystem::create_directories(project_root / "src/controllers");
+    std::filesystem::create_directories(project_root / "src/helpers");
     std::filesystem::create_directories(project_root / "include/controllers");
+    std::filesystem::create_directories(project_root / "include/helpers");
     std::filesystem::create_directories(project_root / "config");
 
     static std::string routes_template =

@@ -5,6 +5,8 @@ project(uva-networking)
 
 add_library(uva-networking
 	${CMAKE_CURRENT_LIST_DIR}/src/web_application.cpp
+	${CMAKE_CURRENT_LIST_DIR}/src/web_client.cpp
+	${CMAKE_CURRENT_LIST_DIR}/src/networking.cpp
 )
 
 include_directories(${CMAKE_CURRENT_LIST_DIR})
@@ -17,6 +19,18 @@ include("${CMAKE_CURRENT_LIST_DIR}/networking/CMakeLists.txt")
 find_package(OpenSSL REQUIRED)
 include_directories(${OPENSSL_INCLUDE_DIR})
 target_link_libraries(uva-networking ${OPENSSL_LIBRARIES})
+
+if(WIN32)
+	get_filename_component(OPENSSL_ROOT ${OPENSSL_INCLUDE_DIR} DIRECTORY)
+
+	add_custom_command(TARGET uva-networking POST_BUILD
+		COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${OPENSSL_ROOT}/bin"
+        $<TARGET_FILE_DIR:uva-networking>
+	)
+
+
+endif()
 
 #Tests
 

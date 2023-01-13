@@ -1,0 +1,16 @@
+body {
+    margin: 0px;
+}
+
+header {
+    color: #F0F0F0;
+    background-color:dodgerblue;
+}
+
+header > h1 {
+    padding: 8px;
+}
+
+.container {
+    margin: 0px;
+}
