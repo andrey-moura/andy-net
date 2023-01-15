@@ -82,8 +82,8 @@ void uva::networking::cleanup()
         work_thread->join();
     }
 
-    io_context.reset();
     work.reset();
+    io_context.reset();
     ssl_context.reset();
     work_thread.reset();
 }
@@ -533,6 +533,15 @@ size_t uva::networking::basic_socket::available() const
     }
 }
 
+size_t uva::networking::basic_socket::available(error_code& ec) const
+{
+    if(m_protocol == protocol::https) {
+        return m_ssl_socket->lowest_layer().available(ec);
+    } else {
+        return m_socket->available(ec);
+    }
+}
+
 std::string uva::networking::basic_socket::remote_endpoint_string() const
 {
     error_code ec;
@@ -580,7 +589,51 @@ error_code uva::networking::basic_socket::connect(const std::string &protocol, c
         m_ssl_socket.reset();
     }
 
+    if(ec) {
+        close();
+    }
+
     return ec;
+}
+
+void uva::networking::basic_socket::connect_async(const std::string &protocol, const std::string &host, std::function<void(error_code)> completation)
+{
+    std::string __host = host;
+    std::string port = protocol;
+    size_t port_index = host.find(':');
+    if(port_index != std::string::npos) {
+        __host = host.substr(0, port_index);
+        port = host.substr(port_index+1);
+    }
+
+    asio::error_code ec;
+
+    m_protocol = protocol == "https" ? protocol::https : protocol::http;
+    resolver->async_resolve(asio::ip::tcp::resolver::query(__host, port), [completation, this](error_code ec, asio::ip::tcp::resolver::iterator iterator){
+
+        if(ec) {
+            completation(ec);
+            return;
+        }
+
+        auto connect_completation = [completation, this](error_code ec) {
+            if(ec) {
+                close();
+            }
+
+            completation(ec);
+        };
+
+        if (m_protocol == protocol::https) {
+            m_socket.reset();
+            m_ssl_socket = std::make_unique<asio::ssl::stream<asio::ip::tcp::socket>>(*io_context, *ssl_context);
+            m_ssl_socket->lowest_layer().async_connect(*iterator, connect_completation);
+        } else {
+            m_ssl_socket.reset();
+            m_socket = std::make_unique<asio::ip::tcp::socket>(*io_context);
+            m_socket->async_connect(*iterator, connect_completation);
+        }
+    });
 }
 
 error_code uva::networking::basic_socket::server_handshake()
@@ -607,6 +660,15 @@ error_code uva::networking::basic_socket::client_handshake()
     }
 
     return ec;
+}
+
+void uva::networking::basic_socket::async_client_handshake(std::function<void(error_code)> completation)
+{
+    if(m_protocol == protocol::https) {
+        m_ssl_socket->async_handshake(asio::ssl::stream_base::client, completation);
+    } else {
+        //throw excpetion
+    }
 }
 
 void uva::networking::basic_socket::close()

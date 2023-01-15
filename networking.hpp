@@ -61,12 +61,16 @@ namespace uva
             bool is_open() const;
             bool needs_handshake() const;
             size_t available() const;
+            size_t available(error_code& ec) const;
             std::string remote_endpoint_string() const;
 
             error_code server_handshake();
             error_code client_handshake();
+            void async_client_handshake(std::function<void(error_code)> completation);
 
             error_code connect(const std::string& protocol, const std::string& host);
+            void connect_async(const std::string& protocol, const std::string& host, std::function<void(error_code)> completation);
+
             void close();
 
             void read_until(std::string& buffer, std::string_view delimiter);

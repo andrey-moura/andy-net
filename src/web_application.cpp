@@ -386,11 +386,14 @@ void web_application::init(int argc, const char **argv)
     std::string address = "localhost";
 
     static std::string port_switch = "--port=";
+    static std::string address_switch = "--address=";
 
     for(size_t i = 0; i < argc; ++i) {
         std::string arg = argv[i];
         if(arg.starts_with(port_switch)) {
             port = std::stoi(arg.substr(port_switch.size()));
+        } else if(arg.starts_with(address_switch)) {
+            port = std::stoi(arg.substr(address_switch.size()));
         }
     }
     
@@ -429,7 +432,7 @@ void web_application::init(int argc, const char **argv)
 
             if(connection->m_socket.is_open())
             {
-                size_t available = connection->m_socket.available();
+                size_t available = connection->m_socket.available(ec);
 
                 if(!ec)
                 {
@@ -438,13 +441,16 @@ void web_application::init(int argc, const char **argv)
                         std::cout << available << " bytes are available to read" << std::endl;
                         proccess_request(connection);
                     }
+                    
+                    continue;
                 }
             }
 
             seek_connections.push_back(connection);
+            log_error("Connection {} was marked as seek.", connection->m_socket.remote_endpoint_string());
         }
 
-        std::remove_if(m_connections.begin(), m_connections.end(), [&seek_connections](std::shared_ptr<web_connection>& connection){
+        m_connections.erase(std::remove_if(m_connections.begin(), m_connections.end(), [&seek_connections](std::shared_ptr<web_connection>& connection){
             auto it = std::find(seek_connections.begin(), seek_connections.end(), connection);
 
             if(it != seek_connections.end()) {
@@ -453,6 +459,6 @@ void web_application::init(int argc, const char **argv)
             }
 
             return false;
-        });
+        }), m_connections.end());
 	}
 }
