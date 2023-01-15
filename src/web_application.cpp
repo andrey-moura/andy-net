@@ -393,7 +393,7 @@ void web_application::init(int argc, const char **argv)
         if(arg.starts_with(port_switch)) {
             port = std::stoi(arg.substr(port_switch.size()));
         } else if(arg.starts_with(address_switch)) {
-            port = std::stoi(arg.substr(address_switch.size()));
+            address_switch = arg.substr(address_switch.size());
         }
     }
     
