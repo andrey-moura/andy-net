@@ -382,8 +382,8 @@ void web_application::init(int argc, const char **argv)
 
     expose_function("stylesheet_path", stylesheet_path);
 
-	size_t port = 3000;
-    std::string address = "localhost";
+	size_t port = 44095;
+    std::string address;
 
     static std::string port_switch = "--port=";
     static std::string address_switch = "--address=";
@@ -392,33 +392,33 @@ void web_application::init(int argc, const char **argv)
         std::string arg = argv[i];
         if(arg.starts_with(port_switch)) {
             port = std::stoi(arg.substr(port_switch.size()));
-        } else if(arg.starts_with(address_switch)) {
-            address_switch = arg.substr(address_switch.size());
+        }
+        else if(arg.starts_with(address_switch)) {
+            address = arg.substr(address_switch.size());
         }
     }
-    
-	asio::error_code ec;
-
-	asio::ip::tcp::resolver resolver(*io_context);
-	asio::ip::basic_resolver_results res = resolver.resolve({ address, std::to_string(port).data() }, ec);
-    asio::ip::tcp::endpoint endpoint = asio::ip::tcp::endpoint(*res.begin());
 
     try {
-        m_asioAcceptor = new asio::ip::tcp::acceptor(*io_context, endpoint, port); // Handles new incoming connection attempts...
-    } catch(asio::system_error e)
-    {
-        ec = e.code();
-    }
+        if(address.size()) {
+            asio::error_code ec;
 
-	if (ec || res.empty()) {
-        log_error("Failed to resolve endpoint for {} on port {}: {}", address, port, ec.message());
-        cleanup();
-		return;
-	}
+            asio::ip::tcp::resolver resolver(*io_context);
+            asio::ip::basic_resolver_results res = resolver.resolve({ address, std::to_string(port).data() }, ec);
+            asio::ip::tcp::endpoint endpoint = asio::ip::tcp::endpoint(*res.begin());
+
+            m_asioAcceptor = new asio::ip::tcp::acceptor(*io_context, endpoint, port);
+        } else {
+            m_asioAcceptor = new asio::ip::tcp::acceptor(*io_context, asio::ip::tcp::endpoint(asio::ip::tcp::v4(), port));
+        }
+    } catch(std::exception e)
+    {
+        log_error("Failed to start listening: {}", e.what());
+        return;
+    }
 
 	acceptor(*m_asioAcceptor);
 
-    log_success("Started listening in {} on port {}", address, port);
+    log_success("Started listening in {}", m_asioAcceptor->local_endpoint().address().to_string());
 
 	while (1) {
 		std::this_thread::sleep_for(std::chrono::milliseconds(16));
