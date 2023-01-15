@@ -382,8 +382,11 @@ void web_application::init(int argc, const char **argv)
 
     expose_function("stylesheet_path", stylesheet_path);
 
-	size_t port = 44095;
+	size_t port = 3000;
     std::string address;
+#ifdef __UVA_DEBUG__
+    address = "localhost";
+#endif
 
     static std::string port_switch = "--port=";
     static std::string address_switch = "--address=";
