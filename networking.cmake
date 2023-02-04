@@ -8,6 +8,11 @@ function(add_web_app name)
 
         "${CMAKE_CURRENT_LIST_DIR}/include/helpers/*_helper.hpp"
         "${CMAKE_CURRENT_LIST_DIR}/src/helpers/*_helper.cpp"
+
+        "${CMAKE_CURRENT_LIST_DIR}/src/migrations/*_migration.cpp"
+
+        "${CMAKE_CURRENT_LIST_DIR}/include/models/*.hpp"
+        "${CMAKE_CURRENT_LIST_DIR}/src/models/*.cpp"
     )
 
     SET(source_files
@@ -16,6 +21,7 @@ function(add_web_app name)
 
     include_directories("${CMAKE_CURRENT_LIST_DIR}/include/controllers")
     include_directories("${CMAKE_CURRENT_LIST_DIR}/include/helpers")
+    include_directories("${CMAKE_CURRENT_LIST_DIR}/include/models")
 
     message(STATUS "Get these files: ${source_files}")
 

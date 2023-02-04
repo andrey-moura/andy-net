@@ -38,8 +38,8 @@ namespace uva
             void connect_if_is_not_open();
             void connect_if_is_not_open_async(std::function<void()> success, std::function<void(error_code&)> on_error = nullptr);
         public:
-            void get(const std::string& route, std::map<std::string, var> params, std::map<std::string, var> headers, const std::string& body, std::function<void(http_message)> on_success, std::function<void(error_code&)> on_error = nullptr);
-            void get(const std::string& route, std::map<std::string, var> params, std::map<std::string, var> headers, std::map<var, var>&& body, std::function<void(http_message)> on_success, std::function<void(error_code&)> on_error = nullptr);
+            void get (const std::string& route, std::map<var, var> params, std::map<var, var> headers, std::function<void(http_message)> on_success, std::function<void(error_code&)> on_error = nullptr);
+            void post(const std::string& route, std::map<var, var> body,   std::map<var, var> headers, std::function<void(http_message)> on_success, std::function<void(error_code&)> on_error = nullptr);
         public:
             virtual void on_connection_error(const uva::networking::error_code& ec);
         }; // class basic_web_client

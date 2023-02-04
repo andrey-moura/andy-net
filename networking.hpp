@@ -12,12 +12,15 @@ namespace uva
     namespace networking
     {
         enum class status_code {
+            /* updates here must reflect on s_status_codes */
             ok = 200,
             no_content = 204,
             bad_request = 400,
             unauthorized = 401,
             not_found = 404,
-
+            payload_too_large = 413,
+            unsupported_media_type = 415,
+            internal_server_error = 500
         };
         enum class content_type {
             application_json,
@@ -30,10 +33,11 @@ namespace uva
             std::string status_msg;
             std::string version;
             content_type type;
-            var body;
             std::string method;
             std::string query_string;
             std::string url;
+            std::string endpoint;
+            var body;
             var params;
             var headers;
         };
@@ -97,7 +101,7 @@ namespace uva
         http_message read_http_request(basic_socket& socket);
         http_message read_http_response(basic_socket& socket);
         void write_http_response(basic_socket& socket, const std::string& body, const status_code& status, const content_type& content_type);
-        void write_http_request(basic_socket& socket, std::string host, const std::string &route, const std::map<std::string, var> &params, const std::map<std::string, var> &headers, const std::string& body, std::function<void()> on_success, std::function<void(error_code&)> on_error = nullptr);
+        void write_http_request(basic_socket& socket, std::string host, const std::string &route, const std::map<var, var> &params, const std::map<var, var> &headers, const std::string& body, std::function<void()> on_success, std::function<void(error_code&)> on_error = nullptr);
 
         void decode_char_from_web(std::string_view& sv, std::string& buffer);
         std::map<var, var> query_to_params(std::string_view query);

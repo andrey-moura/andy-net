@@ -24,7 +24,7 @@ std::string name = "web_application";
 
 class web_connection;
 
-http_message proccess_request(std::shared_ptr<web_connection> connnection, bool new_connection = false);
+void proccess_request(std::shared_ptr<web_connection> connnection, bool new_connection = false);
 asio::ip::tcp::acceptor* m_asioAcceptor = nullptr;
 
 std::map<std::string, std::function<std::string(var)>> exposed_functions;
@@ -95,7 +95,7 @@ static std::string cow_read_file(const std::filesystem::path& path)
     return content;
 }
 
-http_message proccess_request(std::shared_ptr<web_connection> connnection, bool new_connection)
+void proccess_request(std::shared_ptr<web_connection> connnection, bool new_connection)
 {
     http_message request;
 
@@ -106,11 +106,13 @@ http_message proccess_request(std::shared_ptr<web_connection> connnection, bool 
     try {
         request = read_http_request(connnection->m_socket);
     }
-    catch(std::runtime_error e) {
-        std::cerr << "[SERVER] Read invalid http request from " << connnection->m_socket.remote_endpoint_string() << std::endl;
+    catch(std::exception e) {
+        log_error("Exception caught reading request from {}: {}", connnection->m_socket.remote_endpoint_string(), e.what());
         connnection->m_socket.close();
-        return request;
+        return;
     }
+
+    log("\n\nStarted {} {} for {} with params:\n{}\nand headers: {}", request.method, request.url, request.endpoint, request.params.to_s(), request.headers.to_s());
 
     if(new_connection) {
 
@@ -119,34 +121,36 @@ http_message proccess_request(std::shared_ptr<web_connection> connnection, bool 
     std::string action;
     std::string controller;
 
-    std::string url = request.url;
-    std::string query;
-
-    std::cout << request.headers.to_s() << "\n\n\n";
-
-    size_t search_params_index = url.find('?');
-
-    if(search_params_index != std::string::npos) {
-        query = url.substr(search_params_index+1);
-        url = url.substr(0, search_params_index);
-    }
-
-    var params = std::move(query_to_params(query));
-
-    if(url.starts_with('/')) {
-        url.erase(url.begin());
-    }
-
     //asking asset
-    if(url.ends_with(".css")) {
-        respond css_file(url);
+    if(request.url.ends_with(".css")) {
+        respond css_file(request.url);
 
         write_http_response(connnection->m_socket, current_response.body, current_response.status, current_response.type);
     } else {
-        std::string route = request.method + " " + url;
+        std::string route = request.method + " " + request.url;
 
         try {
-            if(!dispatch(route, connnection, params, request.headers, request.body)) {
+            basic_action_target target = find_dispatch_target(route, connnection);
+            if(target.controller) {
+                {
+                    std::shared_ptr<basic_web_controller> web_controller = std::dynamic_pointer_cast<web_application::basic_web_controller>(target.controller);
+                    if(web_controller) {
+                        //Following lines are generating exceptions
+                        target.controller->params = request.params;
+                        web_controller->request = request;
+
+                        dispatch(target, connnection);
+                    } else {
+                        respond html_template("error", {
+                            { "error_type", "Implementation Error" },
+                            { "error_title", "Cannot Cast To <i>uva::networking::web_application::basic_web_controller</i>" },
+                            { "error_description", std::format("Class <i>{}<i/> cannot be casted to <i>basic_web_controller</i>. "
+                                                                    "Maybe have you forgotten to derive from <i>basic_web_controller<i> in your controller "
+                                                                    "definition or declared it as a private base class?", target.controller->name) },
+                        });
+                    }
+                }
+            } else {
                 respond html_template("error", {
                     { "error_type", "Routing Error" },
                     { "error_title", "Route Not Found" },
@@ -168,7 +172,7 @@ http_message proccess_request(std::shared_ptr<web_connection> connnection, bool 
         connnection->m_socket.close();
     }
 
-    return request;
+    return;
 }
 
 void acceptor(asio::ip::tcp::acceptor& asioAcceptor) {
@@ -177,10 +181,10 @@ void acceptor(asio::ip::tcp::acceptor& asioAcceptor) {
 		// Triggered by incoming connection request
 		if (!ec)
 		{
-	        std::cout << "[SERVER] New Connection: " << socket.remote_endpoint() << "\n";
+	        std::cout << "New Connection: " << socket.remote_endpoint() << "\n";
             m_connections.push_back(std::make_shared<web_connection>(basic_socket(std::move(socket), protocol::https)));
 
-
+            log("Connection accepted with {} bytes available to read.", m_connections.back()->m_socket.available());
             proccess_request(m_connections.back(), true);
 		}
 		else
@@ -291,10 +295,10 @@ std::string format_html_file(const std::string& path, const var& locals)
     return formated_content;
 }
 
-http_message& uva::networking::operator<<(http_message& http_message, const uva::json& __body)
+http_message& uva::networking::operator+=(http_message& http_message, std::map<var,var>&& __body)
 {
     http_message.status = status_code::ok;
-    http_message.body = __body.enconde();
+    http_message.body = uva::json::enconde(var(std::move(__body)));
     http_message.type = content_type::application_json;
 
     return http_message;
@@ -327,10 +331,10 @@ http_message &uva::networking::operator<<(http_message &http_message, const web_
     http_message.status = status_code::ok;
     http_message.type = content_type::text_css;
 
-    std::filesystem::path path = app_dir / "app" / css.name;
+    std::filesystem::path path = (app_dir / "app" / css.name).make_preferred();
 
     if(!std::filesystem::exists(path)) {
-        //throw error
+        
     }
 
     http_message.body = uva::file::read_all_text<char>(path);

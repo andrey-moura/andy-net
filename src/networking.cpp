@@ -95,6 +95,9 @@ static std::map<status_code, std::string> s_status_codes
     { (status_code)400, "Bad Request" },
     { (status_code)401, "Unauthorized" },
     { (status_code)404, "Not Found" },
+    { (status_code)413, "Payload Too Large" },
+    { (status_code)415, "Unsupported Media Type" },
+    { (status_code)500, "Internal Server Error" },
 };
 
 static std::map<content_type, std::string> s_content_types
@@ -253,6 +256,7 @@ http_message uva::networking::read_http_request(basic_socket &socket)
     std::stringstream htpp_info_stream(http_info);
 
     http_message request;
+    request.endpoint = socket.remote_endpoint_string();
 
     htpp_info_stream >> request.method;
 
@@ -263,13 +267,35 @@ http_message uva::networking::read_http_request(basic_socket &socket)
     char version_start[] = "HTTP/";
 
     if (!request.version.starts_with(version_start)) {
-        throw std::runtime_error("invalid http_message: invalid http http_message (1)");
+        throw std::runtime_error("Unrecognized HTTP version: " + request.version);
     }
-
-    request.headers = empty_map;
 
     request.headers = read_headers(headers_stream);
     request.body = read_body(socket, request.headers);
+    
+    if(request.method == "POST") {
+
+        std::string content_type = request.headers["Content-Type"];
+        if(content_type == "application/json") {
+            request.params = json::decode(request.body);
+        }
+    } else {
+        std::string query;
+
+        size_t search_params_index = request.url.find('?');
+
+        if(search_params_index != std::string::npos) {
+            query = request.url.substr(search_params_index+1);
+            request.url = request.url.substr(0, search_params_index);
+        }
+
+        request.params = std::move(query_to_params(query));
+    }
+
+    if(request.url.starts_with('/')) {
+        request.url.erase(request.url.begin());
+    }
+
     return request;
 }
 
@@ -353,7 +379,7 @@ void uva::networking::write_http_response(basic_socket &socket, const std::strin
     }
 }
 
-void uva::networking::write_http_request(basic_socket &socket, std::string host, const std::string &route, const std::map<std::string, var> &params, const std::map<std::string, var> &headers, const std::string &body, std::function<void()> on_success, std::function<void(error_code&)> on_error)
+void uva::networking::write_http_request(basic_socket &socket, std::string host, const std::string &route, const std::map<var, var> &params, const std::map<var, var> &headers, const std::string &body, std::function<void()> on_success, std::function<void(error_code &)> on_error)
 {
     std::string subject = route;
 
@@ -401,11 +427,13 @@ void uva::networking::write_http_request(basic_socket &socket, std::string host,
         request += std::format("{}: {}\r\n", header.first, header.second.to_s());
     }
 
-    request += "Content-Length: ";
-    request += std::to_string(body.size());
-    request += "\r\n\r\n";
+    if(body.size()) {
+        request += "Content-Length: ";
+        request += std::to_string(body.size());
+        request += "\r\n\r\n";
 
-    request += body;
+        request += body;
+    }
 
     socket.write_async(request, [on_success, on_error](error_code& ec) {
         if(ec) {
@@ -470,7 +498,7 @@ std::map<var, var> uva::networking::query_to_params(std::string_view query)
 
         while(query.size())
         {
-            if(query.starts_with(',')) {
+            if(query.starts_with('&')) {
                 query.remove_prefix(1);
                 break;
             }

@@ -22,10 +22,13 @@ namespace uva
 {
     namespace networking
     {
-        http_message& operator<<(http_message& http_message, const uva::json& __body);
-        http_message& operator<<(http_message& http_message, const status_code& __status);
         namespace web_application
         {
+            class basic_web_controller : public uva::routing::basic_controller
+            {
+            public:
+                http_message request;
+            };
             extern http_message current_response;
             extern std::filesystem::path app_dir;
             void expose_function(std::string name, std::function<std::string(var)> function);
@@ -49,13 +52,17 @@ namespace uva
                 }
             };
         };  // namespace web_application
+
+        http_message& operator+=(http_message& http_message, std::map<var,var>&& __body);
+        http_message& operator<<(http_message& http_message, const status_code& __status);
         http_message& operator<<(http_message& http_message, const web_application::basic_html_template& __template);
         http_message& operator<<(http_message& http_message, const web_application::basic_css_file& css);
     }; // namespace networking
     
 }; // namespace uva
 
-#define respond uva::networking::web_application::current_response << 
-#define html_template(file_name, ...) basic_html_template(file_name, __VA_ARGS__, name)
-#define css_file(file_name) basic_css_file(file_name)
-#define with_status << 
+#define respond uva::networking::web_application::current_response
+#define JSON +=
+#define html_template(file_name, ...) << basic_html_template(file_name, __VA_ARGS__, name)
+#define css_file(file_name) << basic_css_file(file_name)
+#define with_status ; uva::networking::web_application::current_response <<

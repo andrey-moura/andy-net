@@ -87,24 +87,23 @@ void uva::networking::basic_web_client::connect_if_is_not_open_async(std::functi
     }
 }
 
-void uva::networking::basic_web_client::get(const std::string &route, std::map<std::string, var> params, std::map<std::string, var> headers, const std::string &body, std::function<void(http_message)> on_success, std::function<void(error_code&)> on_error)
+void uva::networking::basic_web_client::get(const std::string& route, std::map<var, var> params, std::map<var, var> headers, std::function<void(http_message)> on_success, std::function<void(error_code&)> on_error)
 {
     connect_if_is_not_open_async([&,this]() {
         if(m_socket.is_open()) {
-            headers["Content-type"] = "text/plain";
-            write_http_request(m_socket, m_host, route, params, headers, body, [on_success,this]() {
+            write_http_request(m_socket, m_host, route, params, headers, "", [on_success,this]() {
                 on_success(read_http_response(m_socket));
             }, on_error);
         }
     });
 }
 
-void uva::networking::basic_web_client::get(const std::string &route, std::map<std::string, var> params, std::map<std::string, var> headers, std::map<var, var>&& body, std::function<void(http_message)> on_success, std::function<void(error_code &)> on_error)
+void uva::networking::basic_web_client::post(const std::string &route, std::map<var, var> body, std::map<var, var> headers, std::function<void(http_message)> on_success, std::function<void(error_code &)> on_error)
 {
     connect_if_is_not_open_async([&,this]() {
         if(m_socket.is_open()) {
-            headers["Content-type"] = "application/json";
-            write_http_request(m_socket, m_host, route, params, headers, json::enconde(var(std::forward<std::map<var, var>&&>(body))), [on_success,this]() {
+            std::string content = json::enconde(std::move(body));
+            write_http_request(m_socket, m_host, route, {}, headers, "", [on_success,this]() {
                 on_success(read_http_response(m_socket));
             }, on_error);
         }
