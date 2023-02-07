@@ -385,7 +385,7 @@ void uva::networking::write_http_request(basic_socket &socket, std::string host,
         subject += "?";
         for (const auto& param : params)
         {
-            subject += param.first;
+            subject += param.first.to_s();
             subject += "=";
             subject += param.second.to_s();
             subject += '&';
