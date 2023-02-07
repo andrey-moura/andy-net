@@ -3,6 +3,8 @@
 #include <iostream>
 #include <filesystem>
 #include <fstream>
+#include <atomic>
+#include <deque>
 
 #include <asio.hpp>
 #include <asio/ssl.hpp>
@@ -24,38 +26,158 @@ std::string name = "web_application";
 
 class web_connection;
 
-void proccess_request(std::shared_ptr<web_connection> connnection, bool new_connection = false);
+void proccess_request(std::shared_ptr<web_connection> connection, bool new_connection = false);
 asio::ip::tcp::acceptor* m_asioAcceptor = nullptr;
 
 std::map<std::string, std::function<std::string(var)>> exposed_functions;
 
-class web_connection : public basic_connection
+class request_deque_waiter_mutex
 {
+private:
+    std::deque<http_message> m_deque;
+    std::mutex m_deque_mutex;
+    std::condition_variable m_wait_variable;
+    std::mutex m_wait_mutex;
 public:
-    web_connection(basic_socket&& socket)
-        : m_socket(std::forward<basic_socket&&>(socket))
+    void push_back(http_message&& message)
     {
-        asio::error_code ec;
-        if(m_socket.needs_handshake()) {
-            ec = m_socket.server_handshake();
-        }
+        std::scoped_lock locker(m_deque_mutex);
 
-        if (ec) {
-            std::cout << "handshake failed " + ec.message() << std::endl;
-        } else {
-            std::cout << "handshake good" << std::endl;
+        m_deque.push_back(std::move(message));
+
+        m_wait_variable.notify_one();
+    }
+    http_message pop_back()
+    {
+        std::scoped_lock locker(m_deque_mutex);
+
+        http_message& message = m_deque.back();
+        http_message __message = std::move(message);
+
+        m_deque.pop_back();
+
+        return __message;
+    }
+    void clear()
+    {
+        std::scoped_lock lock(m_deque_mutex);
+        m_deque.clear();
+    }
+    bool empty()
+    {
+        std::scoped_lock lock(m_deque_mutex);
+        return m_deque.empty();
+    }
+    size_t size()
+    {
+        std::scoped_lock lock(m_deque_mutex);
+        return m_deque.size();
+    }
+    void wait()
+    {
+        while (empty())
+        {
+            std::unique_lock<std::mutex> ul(m_wait_mutex);
+            m_wait_variable.wait(ul);
         }
     }
-
-    ~web_connection()
-    {
-        if(m_socket.is_open()) {
-            m_socket.close();
-        }
-    }
-
-    basic_socket m_socket;
 };
+
+request_deque_waiter_mutex m_deque;
+
+class web_connection : public basic_connection, public std::enable_shared_from_this<web_connection>
+{
+private:
+    http_message m_request;
+    /*A client that supports persistent connections MAY "pipeline" its
+    requests.*/
+    std::deque<http_message> m_response_deque;
+
+    asio::streambuf m_buffer;
+    basic_socket m_socket;
+    bool m_seek = false;
+    std::mutex m_mutex;
+public:
+    web_connection(basic_socket&& socket);
+public:
+    bool is_seek();
+    void read_request();
+    void write_response(http_message&& message);
+    void close();
+
+    std::shared_ptr<web_connection> get_shared_pointer();
+private:
+    void write_front_response();
+public:
+};
+
+web_connection::web_connection(basic_socket&& socket)
+    : m_socket(std::forward<basic_socket&&>(socket))
+{
+    if(m_socket.needs_handshake()) {
+        m_socket.async_server_handshake([this](uva::networking::error_code ec){
+            if (ec) {
+                m_seek = true;
+            } else {
+                read_request();
+                m_seek = true;
+            }
+        });
+    }
+}
+
+bool web_connection::is_seek()
+{
+    //Called from another thread
+    std::scoped_lock lock(m_mutex);
+    return m_seek;
+}
+
+void web_connection::read_request()
+{
+    networking::async_read_http_request(m_socket, m_request, m_buffer, [this]() {
+        std::scoped_lock lock(m_mutex);
+
+        m_request.connection = this;
+        m_deque.push_back(std::move(m_request));
+
+        //Haven't we came here before?
+        read_request();
+    });
+} 
+
+void web_connection::close()
+{
+    std::scoped_lock lock(m_mutex);
+    m_socket.close();
+}
+
+std::shared_ptr<web_connection> web_connection::get_shared_pointer()
+{
+    std::scoped_lock lock(m_mutex);
+    return shared_from_this();
+}
+
+void web_connection::write_response(http_message&& message)
+{
+    std::scoped_lock lock(m_mutex);
+    m_response_deque.push_back(std::move(message));
+
+    write_front_response();
+}
+
+void web_connection::write_front_response()
+{
+    const http_message& response = m_response_deque.front();
+
+    async_write_http_response(m_socket, response.raw_body, response.status, response.type, [this](uva::networking::error_code ec) {
+        m_response_deque.pop_front();
+
+        if(m_response_deque.size()) {
+            write_front_response();
+        }
+    });
+}
 
 std::vector<std::shared_ptr<web_connection>> m_connections;
 
@@ -70,9 +192,13 @@ R"~~~(
 </html>
 )~~~";
 
-void write_404_http_message(basic_socket& socket)
+void write_404_http_message(std::shared_ptr<web_connection> connection)
 {
-    write_http_response(socket, s_not_found_page, status_code::not_found, content_type::text_html);
+    http_message message;
+    message.raw_body = s_not_found_page;
+    message.status = status_code::not_found;
+    message.type = content_type::text_html;
+    connection->write_response(std::move(message));
 }
 
 static std::string cow_read_file(const std::filesystem::path& path)
@@ -95,51 +221,45 @@ static std::string cow_read_file(const std::filesystem::path& path)
     return content;
 }
 
-void proccess_request(std::shared_ptr<web_connection> connnection, bool new_connection)
+void proccess_request(http_message request)
 {
-    http_message request;
-
     current_response.type = content_type::text_html;
     current_response.status = status_code::no_content;
-    current_response.body = "";
-
-    try {
-        request = read_http_request(connnection->m_socket);
-    }
-    catch(std::exception e) {
-        log_error("Exception caught reading request from {}: {}", connnection->m_socket.remote_endpoint_string(), e.what());
-        connnection->m_socket.close();
-        return;
-    }
+    current_response.raw_body = "";
 
     log("\n\nStarted {} {} for {} with params:\n{}\nand headers: {}", request.method, request.url, request.endpoint, request.params.to_s(), request.headers.to_s());
 
-    if(new_connection) {
-
-    }
-
     std::string action;
     std::string controller;
+
+    /*An HTTP/1.1 server MAY assume that a HTTP/1.1 client intends to
+    maintain a persistent connection unless a Connection header including
+    the connection-token "close" was sent in the request.*/
+
+    bool should_close = false;
+    if(request.headers["Connection"] == "close") {
+        should_close = true;
+    }
 
     //asking asset
     if(request.url.ends_with(".css")) {
         respond css_file(request.url);
 
-        write_http_response(connnection->m_socket, current_response.body, current_response.status, current_response.type);
+        request.connection->write_response(std::move(current_response));
     } else {
         std::string route = request.method + " " + request.url;
 
         try {
-            basic_action_target target = find_dispatch_target(route, connnection);
+            basic_action_target target = find_dispatch_target(route, request.connection->get_shared_pointer());
             if(target.controller) {
                 {
                     std::shared_ptr<basic_web_controller> web_controller = std::dynamic_pointer_cast<web_application::basic_web_controller>(target.controller);
                     if(web_controller) {
                         //Following lines are generating exceptions
                         target.controller->params = request.params;
-                        web_controller->request = request;
+                        web_controller->request = std::move(request);
 
-                        dispatch(target, connnection);
+                        dispatch(target, request.connection->get_shared_pointer());
                     } else {
                         respond html_template("error", {
                             { "error_type", "Implementation Error" },
@@ -158,18 +278,17 @@ void proccess_request(std::shared_ptr<web_connection> connnection, bool new_conn
                 });
             }
 
-            write_http_response(connnection->m_socket, current_response.body, current_response.status, current_response.type);
+            request.connection->write_response(std::move(current_response));
         } catch(std::exception e)
         {
             //write 500 response
             log_error("Exception during dispatch: {}", e.what());
-            write_404_http_message(connnection->m_socket);
+            write_404_http_message(request.connection->get_shared_pointer());
         }
     }
 
-
-    if(request.headers["Connection"] != "keep-alive") {
-        connnection->m_socket.close();
+    if(should_close) {
+        request.connection->close();
     }
 
     return;
@@ -182,10 +301,10 @@ void acceptor(asio::ip::tcp::acceptor& asioAcceptor) {
 		if (!ec)
 		{
 	        std::cout << "New Connection: " << socket.remote_endpoint() << "\n";
-            m_connections.push_back(std::make_shared<web_connection>(basic_socket(std::move(socket), protocol::https)));
+            m_connections.push_back(std::make_shared<web_connection>(std::move(basic_socket(std::move(socket), protocol::https))));
 
-            log("Connection accepted with {} bytes available to read.", m_connections.back()->m_socket.available());
-            proccess_request(m_connections.back(), true);
+            //log("Connection accepted with {} bytes available to read.", m_connections.back()->m_socket.available());
+            //proccess_request(m_connections.back(), true);
 		}
 		else
 		{
@@ -298,7 +417,7 @@ std::string format_html_file(const std::string& path, const var& locals)
 http_message& uva::networking::operator+=(http_message& http_message, std::map<var,var>&& __body)
 {
     http_message.status = status_code::ok;
-    http_message.body = uva::json::enconde(var(std::move(__body)));
+    http_message.raw_body = uva::json::enconde(var(std::move(__body)));
     http_message.type = content_type::application_json;
 
     return http_message;
@@ -321,7 +440,7 @@ http_message &uva::networking::operator<<(http_message &http_message, const web_
         //throw error
     }
 
-    http_message.body = format_html_file(path, __template.locals); 
+    http_message.raw_body = format_html_file(path, __template.locals); 
 
     return http_message;
 }
@@ -337,7 +456,7 @@ http_message &uva::networking::operator<<(http_message &http_message, const web_
         
     }
 
-    http_message.body = uva::file::read_all_text<char>(path);
+    http_message.raw_body = uva::file::read_all_text<char>(path);
 
     return http_message;
 }
@@ -428,44 +547,14 @@ void web_application::init(int argc, const char **argv)
     log_success("Started listening in {}", m_asioAcceptor->local_endpoint().address().to_string());
 
 	while (1) {
-		std::this_thread::sleep_for(std::chrono::milliseconds(16));
+        m_deque.wait();
 
-        std::vector<std::shared_ptr<web_connection>> seek_connections;
+        while(m_deque.size()) {
+            //The message is first pop'ed_back, so in any error, the following request will be processed.
+            //The pop_back is protected with a mutex, so no write while we read.
 
-        for(auto& connection : m_connections)
-        {
-            asio::error_code ec;
-            bool is_seek = false;
-
-            if(connection->m_socket.is_open())
-            {
-                size_t available = connection->m_socket.available(ec);
-
-                if(!ec)
-                {
-                    if(available)
-                    {
-                        std::cout << available << " bytes are available to read" << std::endl;
-                        proccess_request(connection);
-                    }
-                    
-                    continue;
-                }
-            }
-
-            seek_connections.push_back(connection);
-            log_error("Connection {} was marked as seek.", connection->m_socket.remote_endpoint_string());
+            http_message message(m_deque.pop_back());
+            proccess_request(std::move(message));
         }
-
-        m_connections.erase(std::remove_if(m_connections.begin(), m_connections.end(), [&seek_connections](std::shared_ptr<web_connection>& connection){
-            auto it = std::find(seek_connections.begin(), seek_connections.end(), connection);
-
-            if(it != seek_connections.end()) {
-                seek_connections.erase(it);
-                return true;
-            }
-
-            return false;
-        }), m_connections.end());
 	}
 }

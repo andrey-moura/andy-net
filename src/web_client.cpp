@@ -92,7 +92,7 @@ void uva::networking::basic_web_client::get(const std::string& route, std::map<v
     connect_if_is_not_open_async([&,this]() {
         if(m_socket.is_open()) {
             write_http_request(m_socket, m_host, route, params, headers, "", [on_success,this]() {
-                on_success(read_http_response(m_socket));
+                //on_success(read_http_response(m_socket));
             }, on_error);
         }
     });
@@ -104,7 +104,7 @@ void uva::networking::basic_web_client::post(const std::string &route, std::map<
         if(m_socket.is_open()) {
             std::string content = json::enconde(std::move(body));
             write_http_request(m_socket, m_host, route, {}, headers, "", [on_success,this]() {
-                on_success(read_http_response(m_socket));
+                //on_success(read_http_response(m_socket));
             }, on_error);
         }
     });
