@@ -51,12 +51,17 @@ namespace uva
 
                 }
             };
+            // class web_server_connection : public http_connection_participant
+            // {
+            
+            // };
         };  // namespace web_application
 
         http_message& operator+=(http_message& http_message, std::map<var,var>&& __body);
         http_message& operator<<(http_message& http_message, const status_code& __status);
         http_message& operator<<(http_message& http_message, const web_application::basic_html_template& __template);
         http_message& operator<<(http_message& http_message, const web_application::basic_css_file& css);
+        http_message& redirect_to(const std::string& url, const var& params = null);
     }; // namespace networking
     
 }; // namespace uva

@@ -31,66 +31,13 @@ asio::ip::tcp::acceptor* m_asioAcceptor = nullptr;
 
 std::map<std::string, std::function<std::string(var)>> exposed_functions;
 
-class request_deque_waiter_mutex
-{
-private:
-    std::deque<http_message> m_deque;
-    std::mutex m_deque_mutex;
-    std::condition_variable m_wait_variable;
-    std::mutex m_wait_mutex;
-public:
-    void push_back(http_message&& message)
-    {
-        std::scoped_lock locker(m_deque_mutex);
-
-        m_deque.push_back(std::move(message));
-
-        m_wait_variable.notify_one();
-    }
-    http_message pop_back()
-    {
-        std::scoped_lock locker(m_deque_mutex);
-
-        http_message& message = m_deque.back();
-        http_message __message = std::move(message);
-
-        m_deque.pop_back();
-
-        return __message;
-    }
-    void clear()
-    {
-        std::scoped_lock lock(m_deque_mutex);
-        m_deque.clear();
-    }
-    bool empty()
-    {
-        std::scoped_lock lock(m_deque_mutex);
-        return m_deque.empty();
-    }
-    size_t size()
-    {
-        std::scoped_lock lock(m_deque_mutex);
-        return m_deque.size();
-    }
-    void wait()
-    {
-        while (empty())
-        {
-            std::unique_lock<std::mutex> ul(m_wait_mutex);
-            m_wait_variable.wait(ul);
-        }
-    }
-};
-
-request_deque_waiter_mutex m_deque;
+using http_message_pipeline = uva::networking::basic_thread_safe_pipeline_waiter<http_message>;
+http_message_pipeline m_deque;
 
 class web_connection : public basic_connection, public std::enable_shared_from_this<web_connection>
 {
 private:
     http_message m_request;
-    /*A client that supports persistent connections MAY "pipeline" its
-    requests.*/
     std::deque<http_message> m_response_deque;
 
     asio::streambuf m_buffer;
@@ -163,11 +110,14 @@ void web_connection::write_response(http_message&& message)
     std::scoped_lock lock(m_mutex);
     m_response_deque.push_back(std::move(message));
 
-    write_front_response();
+    if(m_response_deque.size() == 1) {
+        write_front_response();
+    }
 }
 
 void web_connection::write_front_response()
 {
+    /* The scope is already locked by write_response */
     const http_message& response = m_response_deque.front();
 
     async_write_http_response(m_socket, response.raw_body, response.status, response.type, [this](uva::networking::error_code ec) {
@@ -227,7 +177,7 @@ void proccess_request(http_message request)
     current_response.status = status_code::no_content;
     current_response.raw_body = "";
 
-    log("\n\nStarted {} {} for {} with params:\n{}\nand headers: {}", request.method, request.url, request.endpoint, request.params.to_s(), request.headers.to_s());
+    format_on_cout("\n\nStarted {} {} for {} with params:\n{}\nand headers: {}", request.method, request.url, request.endpoint, request.params.to_s(), request.headers.to_s());
 
     std::string action;
     std::string controller;
@@ -267,7 +217,7 @@ void proccess_request(http_message request)
                             { "error_description", std::format("Class <i>{}<i/> cannot be casted to <i>basic_web_controller</i>. "
                                                                     "Maybe have you forgotten to derive from <i>basic_web_controller<i> in your controller "
                                                                     "definition or declared it as a private base class?", target.controller->name) },
-                        });
+                        }) with_status status_code::internal_server_error;
                     }
                 }
             } else {
@@ -275,7 +225,7 @@ void proccess_request(http_message request)
                     { "error_type", "Routing Error" },
                     { "error_title", "Route Not Found" },
                     { "error_description", std::format("No Route Matches {}", route) },
-                });
+                }) with_status status_code::not_found;
             }
 
             request.connection->write_response(std::move(current_response));
@@ -283,7 +233,14 @@ void proccess_request(http_message request)
         {
             //write 500 response
             log_error("Exception during dispatch: {}", e.what());
-            write_404_http_message(request.connection->get_shared_pointer());
+
+            respond html_template("error", {
+                { "error_type", "Unhandled Exception" },
+                { "error_title", "Unhandled Exception" },
+                { "error_description", std::format("An unhandled exception has been caught: {}", e.what()) },
+            }) with_status status_code::internal_server_error;
+
+            request.connection->write_response(std::move(current_response));
         }
     }
 
@@ -461,6 +418,14 @@ http_message &uva::networking::operator<<(http_message &http_message, const web_
     return http_message;
 }
 
+http_message &uva::networking::redirect_to(const std::string &url, const var &params)
+{
+    current_response.status = status_code::moved;
+    current_response.type   = content_type::text_html;
+    current_response.headers = { { "Location", url } };
+    return current_response;
+}
+
 uva::networking::web_application::basic_html_template::basic_html_template(std::string &&__file_name, std::map<var,var> &&__locals, const std::string& __controller)
     : file_name(std::forward<std::string&&>(__file_name)), locals(std::forward<std::map<var,var>&&>(__locals)), controller(__controller)
 {
@@ -506,10 +471,7 @@ void web_application::init(int argc, const char **argv)
     expose_function("stylesheet_path", stylesheet_path);
 
 	size_t port = 3000;
-    std::string address;
-#ifdef __UVA_DEBUG__
-    address = "localhost";
-#endif
+    std::string address = "localhost";
 
     static std::string port_switch = "--port=";
     static std::string address_switch = "--address=";
@@ -544,7 +506,7 @@ void web_application::init(int argc, const char **argv)
 
 	acceptor(*m_asioAcceptor);
 
-    log_success("Started listening in {}", m_asioAcceptor->local_endpoint().address().to_string());
+    log_success("Started listening in {} ({})", address, m_asioAcceptor->local_endpoint().address().to_string());
 
 	while (1) {
         m_deque.wait();

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <deque>
 
 #include <asio.hpp>
 #include <asio/ssl.hpp>
@@ -16,6 +17,7 @@ namespace uva
             /* updates here must reflect on s_status_codes */
             ok = 200,
             no_content = 204,
+            moved = 302,
             bad_request = 400,
             unauthorized = 401,
             not_found = 404,
@@ -24,13 +26,18 @@ namespace uva
             internal_server_error = 500
         };
         enum class content_type {
+            /* updates here must reflect on s_content_types */
             application_json,
+            image_jpeg,
             text_html,
             text_css
         };
+        const std::string& content_type_to_string(const content_type& status);
+        content_type content_type_from_string(const std::string& status);
         struct http_message
         {
             http_message() = default;
+            http_message(const http_message& other) = default;
             http_message(http_message&& other) = default;
             status_code status;
             std::string status_msg;
@@ -41,12 +48,93 @@ namespace uva
             std::string url;
             std::string endpoint;
             std::string raw_body;
+            std::string host;
             var params;
             var headers;
 
             web_connection* connection;
         public:
             http_message& operator=(http_message&& message) = default;
+        };
+        template<typename T>
+        class basic_thread_safe_pipeline_waiter
+        {
+        private:
+            //thread safe
+            std::mutex m_deque_mutex;
+            //T pipeline
+            std::deque<T> m_deque;
+            //waiter
+            std::condition_variable m_wait_variable;
+            std::mutex m_wait_mutex;
+        public:
+        void push_back(T&& t)
+        {
+            std::scoped_lock locker(m_deque_mutex);
+
+            m_deque.push_back(std::move(t));
+
+            m_wait_variable.notify_one();
+        }
+        T pop_front()
+        {
+            std::scoped_lock locker(m_deque_mutex);
+
+            T& t = m_deque.front();
+            T __t = std::move(t);
+
+            m_deque.pop_front();
+
+            return __t;
+        }
+        T pop_back()
+        {
+            std::scoped_lock locker(m_deque_mutex);
+
+            T& t = m_deque.back();
+            T __t = std::move(t);
+
+            m_deque.pop_back();
+
+            return __t;
+        }
+        T& front()
+        {
+            std::scoped_lock locker(m_deque_mutex);
+
+            return m_deque.front();
+        }
+        void consume_front()
+        {
+            std::scoped_lock locker(m_deque_mutex);
+            m_deque.pop_front();
+        }
+        void clear()
+        {
+            std::scoped_lock lock(m_deque_mutex);
+            m_deque.clear();
+        }
+
+        bool empty()
+        {
+            std::scoped_lock lock(m_deque_mutex);
+            return m_deque.empty();
+        }
+
+        size_t size()
+        {
+            std::scoped_lock lock(m_deque_mutex);
+            return m_deque.size();
+        }
+
+        void wait()
+        {
+            while (empty())
+            {
+                std::unique_lock<std::mutex> ul(m_wait_mutex);
+                m_wait_variable.wait(ul);
+            }
+        }
         };
         enum class run_mode
         {
@@ -64,6 +152,7 @@ namespace uva
         public:
             basic_socket(asio::ip::tcp::socket&& __socket, const protocol& __protocol);
             basic_socket(basic_socket&& __socket);
+            operator bool();
             basic_socket() = default;
             ~basic_socket();
         protected:
@@ -111,8 +200,14 @@ namespace uva
 
         void async_read_http_request(basic_socket &socket, http_message& request, asio::streambuf& buffer, std::function<void()> completation);
         void async_write_http_response(basic_socket& socket, const std::string& body, const status_code& status, const content_type& content_type, std::function<void (uva::networking::error_code &)> completation);
-        http_message read_http_response(basic_socket& socket, asio::streambuf& buffer);
-        void write_http_request(basic_socket& socket, std::string host, const std::string &route, const std::map<var, var> &params, const std::map<var, var> &headers, const std::string& body, std::function<void()> on_success, std::function<void(error_code&)> on_error = nullptr);
+
+        /// @brief Asynchronous write an http request into the socket. 
+        /// @param socket The socket to write to.
+        /// @param request The request to be written into socket. The request should not be destroyed untill completation is called. The request should not be used after calling this function.
+        /// @param on_success Is called on success
+        /// @param on_error  Is called on error
+        void async_write_http_request(basic_socket& socket, http_message& request, std::function<void()> on_success, std::function<void(error_code&)> on_error = nullptr);
+        void async_read_http_response(basic_socket& socket, http_message& response, asio::streambuf& buffer, std::function<void()> completation);
 
         void decode_char_from_web(std::string_view& sv, std::string& buffer);
         std::map<var, var> query_to_params(std::string_view query);

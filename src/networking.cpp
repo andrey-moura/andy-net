@@ -92,6 +92,7 @@ static std::map<status_code, std::string> s_status_codes
 {
     { (status_code)200, "OK" },
     { (status_code)204, "No Content" },
+    { (status_code)302, "Moved" },
     { (status_code)400, "Bad Request" },
     { (status_code)401, "Unauthorized" },
     { (status_code)404, "Not Found" },
@@ -102,8 +103,9 @@ static std::map<status_code, std::string> s_status_codes
 
 static std::map<content_type, std::string> s_content_types
 {
-    { content_type::text_html, "text/html" },
-    { content_type::text_css, "text/css" },
+    { content_type::text_html,        "text/html" },
+    { content_type::image_jpeg,       "image/jpeg" },
+    { content_type::text_css,         "text/css" },
     { content_type::application_json, "application/json" },
 };
 
@@ -113,22 +115,45 @@ const std::string& status_code_to_string(const status_code& status) {
     auto it = s_status_codes.find(status);
 
     if (it == s_status_codes.end()) {
-        throw std::runtime_error(std::format("error: {} is not a valid http_message code.", (size_t)status));
+        throw std::runtime_error(std::format("error: {} is not a valid status_code code.", (size_t)status));
     }
 
     return it->second;
 }
 
-const std::string& content_type_to_string(const content_type& type) {
+const std::string& uva::networking::content_type_to_string(const content_type& type) {
     auto it = s_content_types.find(type);
 
     if (it == s_content_types.end()) {
-        throw std::runtime_error(std::format("error: {} is not a valid http_message code.", (size_t)type));
+        throw std::runtime_error(std::format("error: {} is not a valid content_type code.", (size_t)type));
     }
 
     return it->second;
 }
 
+content_type uva::networking::content_type_from_string(const std::string &content_type)
+{
+    std::string actual_content_type;
+    actual_content_type.reserve(actual_content_type.size());
+
+    const char* str = content_type.c_str();
+    while(*str) {
+        if(*str == ';') {
+            break;
+        }
+
+        actual_content_type.push_back(*str);
+        ++str;
+    }
+
+    for(auto & content : s_content_types) {
+        if(content.second == actual_content_type) {
+            return content.first;
+        }
+    }
+
+    throw std::runtime_error(std::format("error: {} is not a valid content_type.", actual_content_type));
+}
 
 const char* standard_time_format()
 {
@@ -210,8 +235,34 @@ void async_read_body(basic_socket &socket, asio::streambuf& buffer, size_t alrea
 
     if (transfer_encoding != null) {
         //if (transfer_encoding != "chunked") {
-            throw std::runtime_error("invalid http_message: transfer enconding currently aren't supported.");
+            throw std::runtime_error(std::format("Transfer-Encoding '{}' currently are not supported.", transfer_encoding));
         //}
+
+        // socket.async_read_until(buffer, "\r\n", [&buffer, &body, &socket](error_code ec, size_t) {
+        //     std::string line;
+        //     {
+        //         std::istream stream(&buffer);
+        //         std::getline(stream, line);
+        //     }
+
+        //     if(line.ends_with('\n')) {
+        //         line.pop_back(); 
+        //     }
+
+        //     size_t chunk_size = std::stoi(line, nullptr, 16);
+
+        //     if(chunk_size) {
+        //         size_t old_size = body.size();
+        //         body.resize(old_size+chunk_size);
+
+        //         socket.async_read_exactly(buffer, chunk_size, [](error_code ec, size_t){
+
+        //         });
+        //     }
+
+        // });
+
+        // std::string buffer;
     }
     else {
         var content_lenght = headers.fetch("Content-Length");
@@ -244,10 +295,33 @@ void uva::networking::async_read_http_request(basic_socket &socket, http_message
     socket.async_read_until(buffer, "\r\n\r\n", [&socket, &buffer, &request, completation](uva::networking::error_code ec, size_t s){
         {
             std::istream request_stream(&buffer);
+            std::string url;
 
             request_stream >> request.method;
-            request_stream >> request.url;
+            request_stream >> url;
             request_stream >> request.version;
+
+            std::string_view url_view;
+            url_view = url;
+
+            request.url.reserve(url.size());
+            
+            while(url_view.size()) {
+                char c = url_view.front();
+                url_view.remove_prefix(1);
+                if(c == '?') {
+                    break;
+                }
+                else {
+                    request.url.push_back(c);
+                }
+            }
+
+            if(url_view.size()) {
+                request.params = query_to_params(url_view);
+            } else {
+                request.params = empty_map;
+            }
 
             std::string endpoint = socket.remote_endpoint_string();
             request.endpoint = endpoint;
@@ -270,21 +344,6 @@ void uva::networking::async_read_http_request(basic_socket &socket, http_message
                 if(content_type == "application/json") {
                     request.params = json::decode(request.raw_body);
                 }
-            } else {
-                std::string query;
-
-                size_t search_params_index = request.url.find('?');
-
-                if(search_params_index != std::string::npos) {
-                    query = request.url.substr(search_params_index+1);
-                    request.url = request.url.substr(0, search_params_index);
-                }
-
-                request.params = std::move(query_to_params(query));
-            }
-
-            if(request.url.starts_with('/')) {
-                request.url.erase(request.url.begin());
             }
 
             completation();
@@ -293,56 +352,142 @@ void uva::networking::async_read_http_request(basic_socket &socket, http_message
     });
 }
 
-http_message uva::networking::read_http_response(basic_socket& socket, asio::streambuf& buffer)
+void uva::networking::async_write_http_request(basic_socket& socket, http_message& request, std::function<void()> on_success, std::function<void(error_code&)> on_error)
 {
-    http_message response;
-    // Read the response status line. The response streambuf will automatically
-    // grow to accommodate the entire line. The growth may be limited by passing
-    // a maximum size to the streambuf constructor.                
-    std::string headers;
-    headers.reserve(512);
+    std::string buffer;
+    buffer.reserve(512+request.raw_body.size()+(50*request.params.size())+(50*request.headers.size()));
 
-    socket.read_until(headers, "\r\n\r\n");
+    buffer += request.method;
+    buffer.push_back(' ');
 
-    std::stringstream headers_stream(headers);
+    if(!request.url.starts_with('/')) {
+        buffer += "/";
+    }
 
-    std::string http_info;
-    while((http_info.empty() || http_info == "\r") && std::getline(headers_stream, http_info))
+    buffer += request.url;
+
+    if (!request.params.empty()) {
+        buffer.push_back('?');
+
+#if __UVA_DEBUG_LEVEL__ > 0
+        if(request.params.type != var::var_type::map)
+        {
+            throw std::runtime_error(std::format("error: request params invalid type '{}'", request.params.type));
+        }
+#endif
+        for (const auto& param : request.params.as<var::var_type::map>())
+        {
+            param.first.append_to(buffer);
+            buffer.push_back('=');
+            param.second.append_to(buffer);
+            buffer.push_back('&');
+        }
+
+        buffer.pop_back();
+    }
+    
+    buffer += " HTTP/1.1\r\n";
+
+    buffer += "Host: ";
+    buffer += request.host;
+    buffer += "\r\n";
+    buffer += "User-Agent: uva::networking/";
+    buffer += version;
+    buffer += "\r\n";
+    buffer += "Accept: */*\r\n";
+    buffer += "Content-Type: ";
+    buffer += content_type_to_string(request.type);
+    buffer += "\r\n";
+    buffer += "Connection: keep-alive\r\n";
+
+    for(const auto& header : request.headers.as<var::var_type::map>())
     {
-
+        header.first.append_to(buffer);
+        buffer += ": ";
+        header.second.append_to(buffer);
+        buffer += "\r\n";
     }
 
-    std::stringstream htpp_info_stream(http_info);
-
-    std::string version;
-    htpp_info_stream >> version;
-
-    char version_start[] = "HTTP/";
-
-    if(!version.starts_with(version_start)) {
-        throw std::runtime_error("invalid response: invalid http response (1)");
+    if(request.raw_body.size()) {
+        buffer += "Content-Length: ";
+        buffer += std::to_string(request.raw_body.size());
+        buffer += "\r\n\r\n";
+    } else {
+        buffer += "\r\n";
     }
 
-    response.version = version.substr(sizeof(version_start)-1);
+#if __UVA_DEBUG_LEVEL__ >= 2
+    log(buffer);
+#endif
 
-    int status;
+    socket.async_write(buffer, [on_success, on_error, &request, &socket](error_code& ec) {
+        if(ec) {
+            if(on_error) {
+                on_error(ec);
+            }
+        } else {
+            if(request.raw_body.size()) {
+                socket.async_write(request.raw_body, [on_success, on_error](error_code& ec) {
+                    if(ec) {
+                        if(on_error) {
+                            on_error(ec);
+                        }
+                    } else {
+                        on_success();
+                    };
+                });
+            }
+            else {
+                on_success();
+            };
+        }
+    });
+}
 
-    htpp_info_stream >> status;
-    htpp_info_stream >> response.status_msg;
+void uva::networking::async_read_http_response(basic_socket& socket, http_message& response, asio::streambuf& buffer, std::function<void()> completation)
+{
+    socket.async_read_until(buffer, "\r\n\r\n", [&buffer, &response, &socket, completation](uva::networking::error_code ec, size_t s) {
+        if(!ec) {
+            std::istream request_stream(&buffer);
 
-    // response.status = (status_code)status;
-    // response.headers = read_headers(headers_stream);
-    // std::string body = read_body(socket, response.headers);
+            request_stream >> response.version;
 
-    // var content_type = response.headers.fetch("Content-type");
+            char version_start[] = "HTTP/";
 
-    // if(content_type == "application/json") {
-    //     response.body = uva::json::decode(body);
-    // } else {
-    //     response.body = body;
-    // }
+            if(!response.version.starts_with(version_start)) {
+                throw std::runtime_error("invalid response: invalid http response (1)");
+            }
 
-    return response;
+            response.version = response.version.substr(sizeof(version_start)-1);
+
+            int status;
+
+            request_stream >> status;
+            std::getline(request_stream, response.status_msg);
+
+            if(response.status_msg.ends_with('\r')) {
+                response.status_msg.pop_back();
+            }
+
+            response.status = (status_code)status;
+            response.headers = parse_headers(request_stream);
+            response.params = {};
+
+            response.type = content_type_from_string(response.headers.fetch("Content-Type"));
+
+            async_read_body(socket, buffer, s, response.raw_body, response.headers, [&response, completation](uva::networking::error_code ec, size_t){
+                var content_type = response.headers.fetch("Content-Type");
+
+                if(content_type == "application/json") {
+                    response.params = uva::json::decode(response.raw_body);
+                }
+
+                if(completation) {
+                    completation();
+                }
+            });
+        }
+    });
 }
 
 void uva::networking::async_write_http_response(basic_socket &socket, const std::string &body, const status_code &status, const content_type &content_type, std::function<void (uva::networking::error_code &)> completation)
@@ -369,73 +514,6 @@ void uva::networking::async_write_http_response(basic_socket &socket, const std:
         socket.async_write(body, [completation](uva::networking::error_code ec) {
             completation(ec);
         });
-    });
-}
-
-void uva::networking::write_http_request(basic_socket &socket, std::string host, const std::string &route, const std::map<var, var> &params, const std::map<var, var> &headers, const std::string &body, std::function<void()> on_success, std::function<void(error_code &)> on_error)
-{
-    std::string subject = route;
-
-    if(subject.starts_with('/')) {
-        subject.erase(0);
-    }
-
-    //OLD CODE
-    if (!params.empty()) {
-        subject += "?";
-        for (const auto& param : params)
-        {
-            subject += param.first.to_s();
-            subject += "=";
-            subject += param.second.to_s();
-            subject += '&';
-        }
-        subject.erase(subject.size() - 1, 1);
-    }
-
-    if (host.starts_with("https://")) {
-        host.erase(0, 8);
-    } else if(host.starts_with("http://")) {
-        host.erase(0, 7);
-    }
-
-    std::string request;
-    request.reserve(512+body.size());
-
-    request += "GET /";
-    request += subject;
-    request += " HTTP/1.1\r\n";
-
-    request += "Host: ";
-    request += host;
-    request += "\r\n";
-    request += "User-Agent: uva::networking/";
-    request += version;
-    request += "\r\n";
-    request += "Accept: */*\r\n";
-    request += "Connection: keep-alive\r\n";
-
-    for(const auto& header : headers)
-    {
-        request += std::format("{}: {}\r\n", header.first, header.second.to_s());
-    }
-
-    if(body.size()) {
-        request += "Content-Length: ";
-        request += std::to_string(body.size());
-        request += "\r\n\r\n";
-
-        request += body;
-    } else {
-        request += "\r\n";
-    }
-
-    socket.async_write(request, [on_success, on_error](error_code& ec) {
-        if(ec) {
-            on_error(ec);
-        } else {
-            on_success();
-        }
     });
 }
 
@@ -533,6 +611,19 @@ uva::networking::basic_socket::basic_socket(basic_socket &&__socket)
 
 }
 
+uva::networking::basic_socket::operator bool()
+{
+    switch(m_protocol)
+    {
+        case protocol::http:
+            return m_socket ? true : false;
+        break;
+        case protocol::https:
+            return m_ssl_socket ? true : false;
+        break;
+    }
+}
+
 uva::networking::basic_socket::~basic_socket()
 {
     switch(m_protocol)
@@ -619,6 +710,7 @@ error_code uva::networking::basic_socket::connect(const std::string &protocol, c
         __host = host.substr(0, port_index);
         port = host.substr(port_index+1);
     }
+
     asio::error_code ec;
 
     m_protocol = protocol == "https" ? protocol::https : protocol::http;
@@ -654,6 +746,10 @@ void uva::networking::basic_socket::connect_async(const std::string &protocol, c
     if(port_index != std::string::npos) {
         __host = host.substr(0, port_index);
         port = host.substr(port_index+1);
+    }
+
+    if(__host.ends_with('/')) {
+        __host.pop_back();
     }
 
     asio::error_code ec;
