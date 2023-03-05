@@ -18,7 +18,10 @@
 #include <asio.hpp>
 #include <asio/ts/buffer.hpp>
 #include <asio/ts/internet.hpp>
-#include <asio/ssl.hpp>
+
+#ifdef __UVA_OPENSSL_FOUND__
+    #include <asio/ssl.hpp>
+#endif
 #include <thread>
 
 #include <core.hpp>

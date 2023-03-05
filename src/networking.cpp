@@ -13,7 +13,9 @@ using namespace console;
 //STATIC PUBLIC VARIABLES
 std::unique_ptr<asio::io_context> uva::networking::io_context;
 std::unique_ptr<asio::io_context::work> uva::networking::work;
+#ifdef __UVA_OPENSSL_FOUND__
 std::unique_ptr<asio::ssl::context> uva::networking::ssl_context;
+#endif
 const std::string uva::networking::version = "1.0.0";
 
 //STATIC PRIVATE VARIABLES
@@ -55,6 +57,7 @@ void uva::networking::init(const run_mode &mode)
         break;
     }
 
+#ifdef __UVA_OPENSSL_FOUND__
     ssl_context = std::make_unique<asio::ssl::context>(asio::ssl::context::sslv23);
 
     ssl_context->set_options(asio::ssl::context::default_workarounds | asio::ssl::context::no_sslv2 | asio::ssl::context::single_dh_use);
@@ -64,6 +67,7 @@ void uva::networking::init(const run_mode &mode)
     ssl_context->use_certificate_chain_file("server.crt");
     ssl_context->use_private_key_file("server.key", asio::ssl::context::pem);
     ssl_context->use_tmp_dh_file("dh2048.pem");
+#endif
 
     resolver = std::make_unique<asio::ip::tcp::resolver>(*io_context);
 }
@@ -84,7 +88,9 @@ void uva::networking::cleanup()
 
     work.reset();
     io_context.reset();
+#ifdef __UVA_OPENSSL_FOUND__
     ssl_context.reset();
+#endif
     work_thread.reset();
 }
 
@@ -599,14 +605,23 @@ uva::networking::basic_socket::basic_socket(asio::ip::tcp::socket &&__socket, co
         case protocol::http:
             m_socket = std::make_unique<asio::ip::tcp::socket>(std::forward<asio::ip::tcp::socket&&>(__socket));
         break;
+#ifdef __UVA_OPENSSL_FOUND__
         case protocol::https:
             m_ssl_socket = std::make_unique<asio::ssl::stream<asio::ip::tcp::socket>>(std::forward<asio::ip::tcp::socket&&>(__socket), *ssl_context);
+        break;
+#endif
+        default:
+            BASIC_SOCKET_THROW_UNDEFINED_METHOD_FOR_THIS_PROTOCOL();
         break;
     }
 }
 
 uva::networking::basic_socket::basic_socket(basic_socket &&__socket)
-    : m_ssl_socket(std::move(__socket.m_ssl_socket)), m_socket(std::move(__socket.m_socket)), m_protocol(__socket.m_protocol)
+    :
+#ifdef __UVA_OPENSSL_FOUND__
+    m_ssl_socket(std::move(__socket.m_ssl_socket)),
+#endif
+    m_socket(std::move(__socket.m_socket)), m_protocol(__socket.m_protocol)
 {
 
 }
@@ -618,8 +633,13 @@ uva::networking::basic_socket::operator bool()
         case protocol::http:
             return m_socket ? true : false;
         break;
+#ifdef __UVA_OPENSSL_FOUND__
         case protocol::https:
             return m_ssl_socket ? true : false;
+        break;
+#endif
+        default:
+            BASIC_SOCKET_THROW_UNDEFINED_METHOD_FOR_THIS_PROTOCOL();
         break;
     }
 }
@@ -635,6 +655,7 @@ uva::networking::basic_socket::~basic_socket()
                 }
             }
         break;
+#ifdef __UVA_OPENSSL_FOUND__
         case protocol::https:
             if(m_ssl_socket) {
                 if(m_ssl_socket->lowest_layer().is_open()) {
@@ -642,44 +663,86 @@ uva::networking::basic_socket::~basic_socket()
                 }
             }
         break;
+#endif
     }
 }
 
 bool uva::networking::basic_socket::is_open() const
 {
-    if(!m_ssl_socket && !m_socket) return false;
+    if(
+#ifdef __UVA_OPENSSL_FOUND__
+        !m_ssl_socket &&
+#endif
+        !m_socket
+    ) return false;
 
-    if(m_protocol == protocol::https) {
-        return m_ssl_socket->lowest_layer().is_open();
-    } else {
-        return m_socket->is_open();
+    switch(m_protocol)
+    {
+        case protocol::http:
+            return m_socket->is_open();
+        break;
+#ifdef __UVA_OPENSSL_FOUND__
+        case protocol::https:
+            return m_ssl_socket->lowest_layer().is_open();
+        break;
+#endif
+        default:
+            BASIC_SOCKET_THROW_UNDEFINED_METHOD_FOR_THIS_PROTOCOL();
+        break;
     }
 }
 
 bool uva::networking::basic_socket::needs_handshake() const
 {
-    if(!m_ssl_socket && !m_socket) {
-        //throw error
+    switch(m_protocol)
+    {
+        case protocol::http:
+            return false;
+        break;
+#ifdef __UVA_OPENSSL_FOUND__
+        case protocol::https:
+            return true;
+        break;
+#endif
+        default:
+            BASIC_SOCKET_THROW_UNDEFINED_METHOD_FOR_THIS_PROTOCOL();
+        break;
     }
-
-    return m_protocol == protocol::https;
 }
 
 size_t uva::networking::basic_socket::available() const
 {
-    if(m_protocol == protocol::https) {
-        return m_ssl_socket->lowest_layer().available();
-    } else {
-        return m_socket->available();
+    switch(m_protocol)
+    {
+        case protocol::http:
+            return m_socket->available();
+        break;
+#ifdef __UVA_OPENSSL_FOUND__
+        case protocol::https:
+            return m_ssl_socket->lowest_layer().available();
+        break;
+#endif
+        default:
+            BASIC_SOCKET_THROW_UNDEFINED_METHOD_FOR_THIS_PROTOCOL();
+        break;
     }
 }
 
 size_t uva::networking::basic_socket::available(error_code& ec) const
 {
-    if(m_protocol == protocol::https) {
-        return m_ssl_socket->lowest_layer().available(ec);
-    } else {
-        return m_socket->available(ec);
+    switch(m_protocol)
+    {
+        case protocol::http:
+            return m_socket->available(ec);
+        break;
+#ifdef __UVA_OPENSSL_FOUND__
+        case protocol::https:
+            return m_ssl_socket->lowest_layer().available(ec);
+        break;
+#endif
+        default:
+            BASIC_SOCKET_THROW_UNDEFINED_METHOD_FOR_THIS_PROTOCOL();
+        break;
     }
 }
 
@@ -688,10 +751,19 @@ std::string uva::networking::basic_socket::remote_endpoint_string() const
     error_code ec;
     asio::ip::tcp::endpoint endpoint;
 
-    if(m_protocol == protocol::https) {
-        endpoint = m_ssl_socket->lowest_layer().remote_endpoint(ec);
-    } else {
-        endpoint = m_socket->remote_endpoint(ec);
+    switch(m_protocol)
+    {
+        case protocol::http:
+            endpoint = m_socket->remote_endpoint(ec);
+        break;
+#ifdef __UVA_OPENSSL_FOUND__
+        case protocol::https:
+            endpoint = m_ssl_socket->lowest_layer().remote_endpoint(ec);
+        break;
+#endif
+        default:
+            BASIC_SOCKET_THROW_UNDEFINED_METHOD_FOR_THIS_PROTOCOL();
+        break;
     }
 
     if(ec) {
@@ -719,16 +791,27 @@ error_code uva::networking::basic_socket::connect(const std::string &protocol, c
     if(ec) {
         return ec;
     }
-    else if(m_protocol == protocol::https) {
-        m_ssl_socket = std::make_unique<asio::ssl::stream<asio::ip::tcp::socket>>(*io_context, *ssl_context);
-        m_ssl_socket->lowest_layer().connect(*results, ec);
 
-        m_socket.reset();
-    } else {
-        m_socket = std::make_unique<asio::ip::tcp::socket>(*io_context);
-        m_socket->connect(*results, ec);
+    switch(m_protocol)
+    {
+        case protocol::http:
+            m_socket = std::make_unique<asio::ip::tcp::socket>(*io_context);
+            m_socket->connect(*results, ec);
+#ifdef __UVA_OPENSSL_FOUND__
+            m_ssl_socket.reset();
+#endif
+        break;
+#ifdef __UVA_OPENSSL_FOUND__
+        case protocol::https:
+            m_ssl_socket = std::make_unique<asio::ssl::stream<asio::ip::tcp::socket>>(*io_context, *ssl_context);
+            m_ssl_socket->lowest_layer().connect(*results, ec);
 
-        m_ssl_socket.reset();
+            m_socket.reset();
+        break;
+#endif
+        default:
+            BASIC_SOCKET_THROW_UNDEFINED_METHOD_FOR_THIS_PROTOCOL();
+        break;
     }
 
     if(ec) {
@@ -770,15 +853,26 @@ void uva::networking::basic_socket::connect_async(const std::string &protocol, c
             completation(ec);
         };
 
-        if (m_protocol == protocol::https) {
+    switch(m_protocol)
+    {
+        case protocol::http:
+#ifdef __UVA_OPENSSL_FOUND__
+            m_ssl_socket.reset();
+#endif
+            m_socket = std::make_unique<asio::ip::tcp::socket>(*io_context);
+            m_socket->async_connect(*iterator, connect_completation);
+        break;
+#ifdef __UVA_OPENSSL_FOUND__
+        case protocol::https:
             m_socket.reset();
             m_ssl_socket = std::make_unique<asio::ssl::stream<asio::ip::tcp::socket>>(*io_context, *ssl_context);
             m_ssl_socket->lowest_layer().async_connect(*iterator, connect_completation);
-        } else {
-            m_ssl_socket.reset();
-            m_socket = std::make_unique<asio::ip::tcp::socket>(*io_context);
-            m_socket->async_connect(*iterator, connect_completation);
-        }
+        break;
+#endif
+        default:
+            BASIC_SOCKET_THROW_UNDEFINED_METHOD_FOR_THIS_PROTOCOL();
+        break;
+    }
     });
 }
 
@@ -786,10 +880,20 @@ error_code uva::networking::basic_socket::server_handshake()
 {
     error_code ec;
 
-    if(m_protocol == protocol::https) {
-        m_ssl_socket->handshake(asio::ssl::stream_base::server, ec);
-    } else {
-        //throw excpetion
+
+    switch(m_protocol)
+    {
+        case protocol::http:
+            //throw excpetion
+        break;
+#ifdef __UVA_OPENSSL_FOUND__
+        case protocol::https:
+            m_ssl_socket->handshake(asio::ssl::stream_base::server, ec);
+        break;
+#endif
+        default:
+            BASIC_SOCKET_THROW_UNDEFINED_METHOD_FOR_THIS_PROTOCOL();
+        break;
     }
 
     return ec;
@@ -799,10 +903,19 @@ error_code uva::networking::basic_socket::client_handshake()
 {
     error_code ec;
 
-    if(m_protocol == protocol::https) {
-        m_ssl_socket->handshake(asio::ssl::stream_base::client, ec);
-    } else {
-        //throw excpetion
+    switch(m_protocol)
+    {
+        case protocol::http:
+            //throw excpetion
+        break;
+#ifdef __UVA_OPENSSL_FOUND__
+        case protocol::https:
+            m_ssl_socket->handshake(asio::ssl::stream_base::client, ec);
+        break;
+#endif
+        default:
+            BASIC_SOCKET_THROW_UNDEFINED_METHOD_FOR_THIS_PROTOCOL();
+        break;
     }
 
     return ec;
@@ -810,34 +923,56 @@ error_code uva::networking::basic_socket::client_handshake()
 
 void uva::networking::basic_socket::async_client_handshake(std::function<void(error_code)> completation)
 {
-    if(m_protocol == protocol::https) {
-        m_ssl_socket->async_handshake(asio::ssl::stream_base::client, completation);
-    } else {
-        //throw excpetion
+    switch(m_protocol)
+    {
+        case protocol::http:
+            //throw excpetion
+        break;
+#ifdef __UVA_OPENSSL_FOUND__
+        case protocol::https:
+            m_ssl_socket->async_handshake(asio::ssl::stream_base::client, completation);
+        break;
+#endif
+        default:
+            BASIC_SOCKET_THROW_UNDEFINED_METHOD_FOR_THIS_PROTOCOL();
+        break;
     }
 }
 
 void uva::networking::basic_socket::async_server_handshake(std::function<void(error_code)> completation)
 {
-    if(m_protocol == protocol::https) {
-        m_ssl_socket->async_handshake(asio::ssl::stream_base::server, completation);
-    } else {
-        //throw excpetion
+    switch(m_protocol)
+    {
+        case protocol::http:
+            //throw excpetion
+        break;
+#ifdef __UVA_OPENSSL_FOUND__
+        case protocol::https:
+            m_ssl_socket->async_handshake(asio::ssl::stream_base::server, completation);
+        break;
+#endif
+        default:
+            BASIC_SOCKET_THROW_UNDEFINED_METHOD_FOR_THIS_PROTOCOL();
+        break;
     }
 }
 
 void uva::networking::basic_socket::close()
 {
-    if(!m_ssl_socket && !m_socket) {
-        //throw error
-        return;
+    switch(m_protocol)
+    {
+        case protocol::http:
+            m_socket->close();
+        break;
+#ifdef __UVA_OPENSSL_FOUND__
+        case protocol::https:
+            m_ssl_socket->lowest_layer().close();
+        break;
+#endif
+        default:
+            BASIC_SOCKET_THROW_UNDEFINED_METHOD_FOR_THIS_PROTOCOL();
+        break;
     }
-
-    if(m_protocol == protocol::https) {
-        m_ssl_socket->lowest_layer().close();
-    } else {
-        m_socket->close();
-    }  
 }
 
 void uva::networking::basic_socket::read_until(std::string &buffer, std::string_view delimiter)
@@ -848,51 +983,76 @@ void uva::networking::basic_socket::async_read_until(asio::streambuf &buffer, st
 {
     switch(m_protocol)
     {
+        case protocol::http:
+            asio::async_read_until(*m_socket, buffer, delimiter, completation);
+        break;
+#ifdef __UVA_OPENSSL_FOUND__
         case protocol::https:
             asio::async_read_until(*m_ssl_socket, buffer, delimiter, completation);
         break;
-            asio::async_read_until(*m_socket, buffer, delimiter, completation);
+#endif
+        default:
+            BASIC_SOCKET_THROW_UNDEFINED_METHOD_FOR_THIS_PROTOCOL();
         break;
     }
 }
 
 void uva::networking::basic_socket::write(std::string_view sv)
 {   
-    if(m_protocol == protocol::https) {
-        if(!m_ssl_socket) {
-            throw std::runtime_error("error: attempt to write on a null socket");
-        }
-        asio::write(*m_ssl_socket, asio::buffer(sv, sv.size()));
-    } else {
-        asio::write(*m_socket, asio::buffer(sv, sv.size()));
-    }  
+    switch(m_protocol)
+    {
+        case protocol::http:
+            asio::write(*m_socket, asio::buffer(sv, sv.size()));
+        break;
+#ifdef __UVA_OPENSSL_FOUND__
+        case protocol::https:
+            asio::write(*m_ssl_socket, asio::buffer(sv, sv.size()));
+        break;
+#endif
+        default:
+            BASIC_SOCKET_THROW_UNDEFINED_METHOD_FOR_THIS_PROTOCOL();
+        break;
+    }
 }
 
 void uva::networking::basic_socket::async_write(std::string_view sv, std::function<void(error_code &)> completation)
 {
-    if(m_protocol == protocol::https) {
-        asio::async_write(*m_ssl_socket, asio::buffer(sv, sv.size()), [completation](error_code ec, size_t bytes_written) {
-            completation(ec);
-        });
-    } else {
-        asio::async_write(*m_ssl_socket, asio::buffer(sv, sv.size()), [completation](error_code ec, size_t bytes_written) {
-            completation(ec);
-        });
-    }  
+    switch(m_protocol)
+    {
+        case protocol::http:
+            asio::async_write(*m_socket, asio::buffer(sv, sv.size()), [completation](error_code ec, size_t bytes_written) {
+                completation(ec);
+            });
+        break;
+#ifdef __UVA_OPENSSL_FOUND__
+        case protocol::https:
+            asio::async_write(*m_ssl_socket, asio::buffer(sv, sv.size()), [completation](error_code ec, size_t bytes_written) {
+                completation(ec);
+            });
+        break;
+#endif
+        default:
+            BASIC_SOCKET_THROW_UNDEFINED_METHOD_FOR_THIS_PROTOCOL();
+        break;
+    }
 }
 
 void uva::networking::basic_socket::read_exactly(char *buffer, size_t to_read)
 {
     size_t read = 0;
-    switch (m_protocol)
+
+    switch(m_protocol)
     {
-    case protocol::http:
-        read = asio::read(*m_socket, asio::buffer(buffer, to_read), asio::transfer_exactly(to_read));
+        case protocol::http:
+            read = asio::read(*m_socket, asio::buffer(buffer, to_read), asio::transfer_exactly(to_read));
         break;
-    case protocol::https:
-        read = asio::read(*m_ssl_socket, asio::buffer(buffer, to_read), asio::transfer_exactly(to_read));
+#ifdef __UVA_OPENSSL_FOUND__
+        case protocol::https:
+            read = asio::read(*m_ssl_socket, asio::buffer(buffer, to_read), asio::transfer_exactly(to_read));
         break;
-    default:
+#endif
+        default:
+            BASIC_SOCKET_THROW_UNDEFINED_METHOD_FOR_THIS_PROTOCOL();
         break;
     }
 
@@ -904,15 +1064,19 @@ void uva::networking::basic_socket::read_exactly(char *buffer, size_t to_read)
 void uva::networking::basic_socket::read_exactly(std::string &buffer, size_t to_read)
 {
     size_t read = 0;
-    switch (m_protocol)
+
+    switch(m_protocol)
     {
-    case protocol::http:
-        read = asio::read(*m_socket, asio::buffer(buffer), asio::transfer_exactly(to_read));
+        case protocol::http:
+            read = asio::read(*m_socket, asio::buffer(buffer), asio::transfer_exactly(to_read));
         break;
-    case protocol::https:
-        read = asio::read(*m_ssl_socket, asio::buffer(buffer), asio::transfer_exactly(to_read));
+#ifdef __UVA_OPENSSL_FOUND__
+        case protocol::https:
+            read = asio::read(*m_ssl_socket, asio::buffer(buffer), asio::transfer_exactly(to_read));
         break;
-    default:
+#endif
+        default:
+            BASIC_SOCKET_THROW_UNDEFINED_METHOD_FOR_THIS_PROTOCOL();
         break;
     }
 
@@ -923,15 +1087,18 @@ void uva::networking::basic_socket::read_exactly(std::string &buffer, size_t to_
 
 void uva::networking::basic_socket::async_read_exactly(asio::mutable_buffer buffer, size_t to_read, std::function<void(error_code, size_t)> completation)
 {
-    switch (m_protocol)
+    switch(m_protocol)
     {
-    case protocol::http:
-        asio::async_read(*m_socket, asio::buffer(buffer), asio::transfer_exactly(to_read), completation);
+        case protocol::http:
+            asio::async_read(*m_socket, asio::buffer(buffer), asio::transfer_exactly(to_read), completation);
         break;
-    case protocol::https:
-        asio::async_read(*m_ssl_socket, asio::buffer(buffer), asio::transfer_exactly(to_read), completation);
+#ifdef __UVA_OPENSSL_FOUND__
+        case protocol::https:
+            asio::async_read(*m_ssl_socket, asio::buffer(buffer), asio::transfer_exactly(to_read), completation);
         break;
-    default:
+#endif
+        default:
+            BASIC_SOCKET_THROW_UNDEFINED_METHOD_FOR_THIS_PROTOCOL();
         break;
     }
 }
@@ -944,15 +1111,19 @@ uint8_t uva::networking::basic_socket::read_byte()
 	auto buffer = asio::buffer(&byte, to_read);
 
     size_t read = 0;
-    switch (m_protocol)
+
+    switch(m_protocol)
     {
-    case protocol::http:
-        read = asio::read(*m_socket, buffer, asio::transfer_exactly(to_read));
+        case protocol::http:
+            read = asio::read(*m_socket, buffer, asio::transfer_exactly(to_read));
         break;
-    case protocol::https:
-        read = asio::read(*m_ssl_socket, buffer, asio::transfer_exactly(to_read));
+#ifdef __UVA_OPENSSL_FOUND__
+        case protocol::https:
+            read = asio::read(*m_ssl_socket, buffer, asio::transfer_exactly(to_read));
         break;
-    default:
+#endif
+        default:
+            BASIC_SOCKET_THROW_UNDEFINED_METHOD_FOR_THIS_PROTOCOL();
         break;
     }
 

@@ -4,9 +4,15 @@
 #include <deque>
 
 #include <asio.hpp>
-#include <asio/ssl.hpp>
+
+#ifdef __UVA_OPENSSL_FOUND__
+    #include <asio/ssl.hpp>
+#endif
 
 #include <core.hpp>
+
+#define BASIC_SOCKET_THROW_UNDEFINED_METHOD_FOR_PROTOCOL(__protocol) throw std::runtime_error(std::format("undefined method '{}' for {}", UVA_FUNCTION_NAME, __protocol));
+#define BASIC_SOCKET_THROW_UNDEFINED_METHOD_FOR_THIS_PROTOCOL() VAR_THROW_UNDEFINED_METHOD_FOR_TYPE(m_protocol)
 
 class web_connection;
 namespace uva
@@ -156,7 +162,9 @@ namespace uva
             basic_socket() = default;
             ~basic_socket();
         protected:
+#if __UVA_OPENSSL_FOUND__
             std::unique_ptr<asio::ssl::stream<asio::ip::tcp::socket>> m_ssl_socket = nullptr;
+#endif
             std::unique_ptr<asio::ip::tcp::socket> m_socket = nullptr;
             protocol m_protocol;
         public:
@@ -190,8 +198,9 @@ namespace uva
 
         extern std::unique_ptr<asio::io_context> io_context;
         extern std::unique_ptr<asio::io_context::work> work;
+#ifdef __UVA_OPENSSL_FOUND__
         extern std::unique_ptr<asio::ssl::context> ssl_context;
-
+#endif
         extern const std::string version;
 
         void init(const run_mode& mode);
@@ -214,3 +223,21 @@ namespace uva
     }; // namespace networking
     
 }; // namespace uva
+
+template <>
+struct std::formatter<uva::networking::protocol> : std::formatter<std::string> {
+    auto format(uva::networking::protocol protocol, format_context& ctx) {
+        switch(protocol)
+        {
+            case uva::networking::protocol::http:
+                return std::format_to(ctx.out(), "{}", "http");
+            break;
+            case uva::networking::protocol::https:
+                return std::format_to(ctx.out(), "{}", "https");
+            break;
+            default:
+                throw std::runtime_error(std::format("invalid value of uva::networking::protocol: {}", (int)protocol));
+            break;
+        }
+    }
+};

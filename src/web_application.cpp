@@ -7,7 +7,10 @@
 #include <deque>
 
 #include <asio.hpp>
-#include <asio/ssl.hpp>
+
+#ifdef __UVA_OPENSSL_FOUND__
+    #include <asio/ssl.hpp>
+#endif
 
 #include <networking.hpp>
 #include <web_application.hpp>
