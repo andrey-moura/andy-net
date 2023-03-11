@@ -70,9 +70,12 @@ web_connection::web_connection(basic_socket&& socket)
                 m_seek = true;
             } else {
                 read_request();
-                m_seek = true;
+                m_seek = false;
             }
         });
+    } else {
+        read_request();
+        m_seek = false;
     }
 }
 
@@ -254,14 +257,14 @@ void proccess_request(http_message request)
     return;
 }
 
-void acceptor(asio::ip::tcp::acceptor& asioAcceptor) {
-	asioAcceptor.async_accept([&asioAcceptor](std::error_code ec, asio::ip::tcp::socket socket)
+void acceptor(asio::ip::tcp::acceptor& asioAcceptor, protocol __protocol) {
+	asioAcceptor.async_accept([&asioAcceptor, __protocol](std::error_code ec, asio::ip::tcp::socket socket)
 	{
 		// Triggered by incoming connection request
 		if (!ec)
 		{
-	        std::cout << "New Connection: " << socket.remote_endpoint() << "\n";
-            m_connections.push_back(std::make_shared<web_connection>(std::move(basic_socket(std::move(socket), protocol::https))));
+	        std::cout << "New Connection: " << socket.remote_endpoint() << std::endl;
+            m_connections.push_back(std::make_shared<web_connection>(std::move(basic_socket(std::move(socket), __protocol))));
 
             //log("Connection accepted with {} bytes available to read.", m_connections.back()->m_socket.available());
             //proccess_request(m_connections.back(), true);
@@ -269,18 +272,28 @@ void acceptor(asio::ip::tcp::acceptor& asioAcceptor) {
 		else
 		{
 			// Error has occurred during acceptance
-			std::cout << "[SERVER] New Connection Error: " << ec.message() << "\n";
+			std::cout << "[SERVER] New Connection Error: " << ec.message() << std::endl;
 		}
 
-		acceptor(asioAcceptor);
+		acceptor(asioAcceptor, __protocol);
 	});
 }
 
-std::string find_html_file(const std::string& controller, const std::string& name)
+std::string find_html_file(const std::string& __controller, const std::string& name)
 {
     std::string folder;
 
     static std::vector<std::string> extensions = { "cpp.html", "html" };
+
+    std::string controller;
+
+    std::string sufix = "_controller";
+
+    if(__controller.ends_with(sufix)) {
+        controller = __controller.substr(0, __controller.size()-sufix.size());
+    } else {
+        controller = __controller;
+    }
 
     std::filesystem::path possibility = app_dir / "app" / "views" / controller / name;
 
@@ -330,9 +343,9 @@ std::string format_html_file(const std::string& path, const var& locals)
                     current_var_name.clear();
                     formated_content.erase(formated_content.end()-var_tag.size(), formated_content.end());
 
-                    if(value)
+                    if(value != null)
                     {
-                        formated_content += value.to_s();
+                        formated_content += value.to_typed_s();
                     }
                 } else {
                     std::string params = current_var_name.substr(parentheses_index);
@@ -410,7 +423,13 @@ http_message &uva::networking::operator<<(http_message &http_message, const web_
     http_message.status = status_code::ok;
     http_message.type = content_type::text_css;
 
-    std::filesystem::path path = (app_dir / "app" / css.name).make_preferred();
+    std::string test = app_dir.string();
+
+    if(css.name.starts_with('/') || css.name.starts_with('\\')) {
+        const_cast<web_application::basic_css_file&>(css).name.erase(0, 1);
+    }
+
+    std::filesystem::path path = app_dir / "app" / css.name;
 
     if(!std::filesystem::exists(path)) {
         
@@ -473,7 +492,7 @@ void web_application::init(int argc, const char **argv)
 
     expose_function("stylesheet_path", stylesheet_path);
 
-	size_t port = 3000;
+	std::string port = "3000";
     std::string address = "localhost";
 
     static std::string port_switch = "--port=";
@@ -482,7 +501,7 @@ void web_application::init(int argc, const char **argv)
     for(size_t i = 0; i < argc; ++i) {
         std::string arg = argv[i];
         if(arg.starts_with(port_switch)) {
-            port = std::stoi(arg.substr(port_switch.size()));
+            port = arg.substr(port_switch.size());
         }
         else if(arg.starts_with(address_switch)) {
             address = arg.substr(address_switch.size());
@@ -494,20 +513,24 @@ void web_application::init(int argc, const char **argv)
             asio::error_code ec;
 
             asio::ip::tcp::resolver resolver(*io_context);
-            asio::ip::basic_resolver_results res = resolver.resolve({ address, std::to_string(port).data() }, ec);
+            asio::ip::basic_resolver_results res = resolver.resolve({ address, port.data() }, ec);
             asio::ip::tcp::endpoint endpoint = asio::ip::tcp::endpoint(*res.begin());
 
-            m_asioAcceptor = new asio::ip::tcp::acceptor(*io_context, endpoint, port);
+            m_asioAcceptor = new asio::ip::tcp::acceptor(*io_context, endpoint);
         } else {
-            m_asioAcceptor = new asio::ip::tcp::acceptor(*io_context, asio::ip::tcp::endpoint(asio::ip::tcp::v4(), port));
+            m_asioAcceptor = new asio::ip::tcp::acceptor(*io_context, asio::ip::tcp::endpoint(asio::ip::tcp::v4(), std::stoi(port)));
         }
     } catch(std::exception e)
     {
         log_error("Failed to start listening: {}", e.what());
         return;
     }
-
-	acceptor(*m_asioAcceptor);
+    
+    if(port == "443"  || port == "https") {
+	    acceptor(*m_asioAcceptor, protocol::https);
+    } else {
+        acceptor(*m_asioAcceptor, protocol::http);
+    }
 
     log_success("Started listening in {} ({})", address, m_asioAcceptor->local_endpoint().address().to_string());
 
