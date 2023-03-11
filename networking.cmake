@@ -39,4 +39,6 @@ function(add_web_app name)
         target_link_options(${name} PUBLIC /SAFESEH:NO)
     endif()
 
+    target_link_libraries(${name} uva-json uva-networking)
+
 endfunction(add_web_app)
