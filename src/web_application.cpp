@@ -177,6 +177,18 @@ static std::string cow_read_file(const std::filesystem::path& path)
     return content;
 }
 
+std::string parse_string_from_web(std::string_view sv)
+{
+    std::string str;
+    str.reserve(sv.size());
+
+    while(sv.size()) {
+        decode_char_from_web(sv, str);
+    }
+
+    return str;
+}
+
 void proccess_request(http_message request)
 {
     current_response.type = content_type::text_html;
@@ -203,50 +215,101 @@ void proccess_request(http_message request)
 
         request.connection->write_response(std::move(current_response));
     } else {
-        std::string route = request.method + " " + request.url;
+        //Todo: documentation and refatoration for files
+        std::string relative = parse_string_from_web(request.url);
 
-        try {
-            basic_action_target target = find_dispatch_target(route, request.connection->get_shared_pointer());
-            if(target.controller) {
-                {
-                    std::shared_ptr<basic_web_controller> web_controller = std::dynamic_pointer_cast<web_application::basic_web_controller>(target.controller);
-                    if(web_controller) {
-                        //Following lines are generating exceptions
-                        target.controller->params = request.params;
-                        web_controller->request = std::move(request);
+        if(relative.starts_with('/') || relative.starts_with('\\')) {
+            relative.erase(0, 1);
+        }
 
-                        dispatch(target, request.connection->get_shared_pointer());
-                    } else {
-                        respond html_template("error", {
-                            { "error_type", "Implementation Error" },
-                            { "error_title", "Cannot Cast To <i>uva::networking::web_application::basic_web_controller</i>" },
-                            { "error_description", std::format("Class <i>{}<i/> cannot be casted to <i>basic_web_controller</i>. "
-                                                                    "Maybe have you forgotten to derive from <i>basic_web_controller<i> in your controller "
-                                                                    "definition or declared it as a private base class?", target.controller->name) },
-                        }) with_status status_code::internal_server_error;
-                    }
-                }
-            } else {
+        std::filesystem::path path = (app_dir / "app" / relative).make_preferred();
+
+        if(request.url.find('.') != std::string::npos && std::filesystem::exists(path)) {
+            //generated using OpenAI
+            //Gere um std::map onde as keys são extensão de arquivos e o valor são MIME Type. Faça isso para os valores mais comuns para o MIME type
+            std::map<std::string, std::string> mime_types {
+                {".css",  "text/css"},
+                {".js",   "application/javascript"},
+                {".json", "application/json"},
+                {".pdf",  "application/pdf"},
+                {".jpg",  "image/jpeg"},
+                {".jpeg", "image/jpeg"},
+                {".png",  "image/png"},
+                {".gif",  "image/gif"},
+                {".svg",  "image/svg+xml"},
+                {".mp4",  "video/mp4"},
+                {".webm", "video/webm"},
+                {".ogg",  "audio/ogg"},
+                {".mp3",  "audio/mpeg"},
+                {".wav",  "audio/wav"},
+                {".txt",  "text/plain"}
+            };
+
+            std::string ext = path.extension().string();
+            auto it = mime_types.find(uva::string::tolower(ext));
+            
+            if(it == mime_types.end()) {
                 respond html_template("error", {
-                    { "error_type", "Routing Error" },
-                    { "error_title", "Route Not Found" },
-                    { "error_description", std::format("No Route Matches {}", route) },
+                    { "error_type", "Filesystem Error" },
+                    { "error_title", "File Not Found" },
+                    { "error_description", std::format("The file {} has invalid extension.", ext) },
                 }) with_status status_code::not_found;
+            } else {
+                current_response.headers = var::map();
+                current_response.headers["Content-type"] = it->second;
+                current_response.status = status_code::ok;
+                current_response.raw_body = uva::file::read_all_text<char>(path);
+
             }
 
             request.connection->write_response(std::move(current_response));
-        } catch(std::exception e)
-        {
-            //write 500 response
-            log_error("Exception during dispatch: {}", e.what());
+        } else {
 
-            respond html_template("error", {
-                { "error_type", "Unhandled Exception" },
-                { "error_title", "Unhandled Exception" },
-                { "error_description", std::format("An unhandled exception has been caught: {}", e.what()) },
-            }) with_status status_code::internal_server_error;
+            std::string route = request.method + " " + request.url;
 
-            request.connection->write_response(std::move(current_response));
+            try {
+                basic_action_target target = find_dispatch_target(route, request.connection->get_shared_pointer());
+                if(target.controller) {
+                    {
+                        std::shared_ptr<basic_web_controller> web_controller = std::dynamic_pointer_cast<web_application::basic_web_controller>(target.controller);
+                        if(web_controller) {
+                            //Following lines are generating exceptions
+                            target.controller->params = request.params;
+                            web_controller->request = std::move(request);
+
+                            dispatch(target, request.connection->get_shared_pointer());
+                        } else {
+                            respond html_template("error", {
+                                { "error_type", "Implementation Error" },
+                                { "error_title", "Cannot Cast To <i>uva::networking::web_application::basic_web_controller</i>" },
+                                { "error_description", std::format("Class <i>{}<i/> cannot be casted to <i>basic_web_controller</i>. "
+                                                                        "Maybe have you forgotten to derive from <i>basic_web_controller<i> in your controller "
+                                                                        "definition or declared it as a private base class?", target.controller->name) },
+                            }) with_status status_code::internal_server_error;
+                        }
+                    }
+                } else {
+                    respond html_template("error", {
+                        { "error_type", "Routing Error" },
+                        { "error_title", "Route Not Found" },
+                        { "error_description", std::format("No Route Matches {}", route) },
+                    }) with_status status_code::not_found;
+                }
+
+                request.connection->write_response(std::move(current_response));
+            } catch(std::exception e)
+            {
+                //write 500 response
+                log_error("Exception during dispatch: {}", e.what());
+
+                respond html_template("error", {
+                    { "error_type", "Unhandled Exception" },
+                    { "error_title", "Unhandled Exception" },
+                    { "error_description", std::format("An unhandled exception has been caught: {}", e.what()) },
+                }) with_status status_code::internal_server_error;
+
+                request.connection->write_response(std::move(current_response));
+            }
         }
     }
 
@@ -345,7 +408,7 @@ std::string format_html_file(const std::string& path, const var& locals)
 
                     if(value != null)
                     {
-                        formated_content += value.to_typed_s();
+                        formated_content += value.to_typed_s('[', ']');
                     }
                 } else {
                     std::string params = current_var_name.substr(parentheses_index);
@@ -444,7 +507,7 @@ http_message &uva::networking::redirect_to(const std::string &url, const var &pa
 {
     current_response.status = status_code::moved;
     current_response.type   = content_type::text_html;
-    current_response.headers = { { "Location", url } };
+    current_response.headers = var::map({ { "Location", url } });
     return current_response;
 }
 

@@ -477,7 +477,7 @@ void uva::networking::async_read_http_response(basic_socket& socket, http_messag
 
             response.status = (status_code)status;
             response.headers = parse_headers(request_stream);
-            response.params = {};
+            response.params = var::map();
 
             response.type = content_type_from_string(response.headers.fetch("Content-Type"));
 
@@ -529,15 +529,15 @@ void uva::networking::decode_char_from_web(std::string_view& sv, std::string &bu
         sv.remove_prefix(1);
 
         if(sv.size() <= 1) {
-            if(!isdigit(sv.front())) {
+            if(!uva::binary::is_hex_digit(sv.front())) {
                 throw std::runtime_error("invalid character following hex scape sequence");
             }
 
             buffer.push_back(uva::binary::nibble_from_hex_string(sv.front()));
             sv.remove_prefix(1);
         } else if(sv.size() >= 2) {
-            if(isdigit(sv[0])) {
-                if(isdigit(sv[1])) {
+            if(uva::binary::is_hex_digit(sv[0])) {
+                if(uva::binary::is_hex_digit(sv[1])) {
                     buffer.push_back(uva::binary::byte_from_hex_string(sv.data()));
                     sv.remove_prefix(2);
                 } else {
