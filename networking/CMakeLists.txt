@@ -4,8 +4,6 @@ cmake_minimum_required(VERSION 3.10)
 
 project(networking)
 
-include(${CONSOLE_ROOT_DIR}/console.cmake)
-
 add_console_app(networking)
 
 target_link_libraries(networking uva-networking uva-console uva-core uva-routing uva-file)
