@@ -13,6 +13,7 @@ include_directories(${CMAKE_CURRENT_LIST_DIR})
 include_directories("${CMAKE_CURRENT_LIST_DIR}/include/asio/asio/include")
 
 set(NETWORKING_ROOT_DIR ${CMAKE_CURRENT_LIST_DIR})
+include(${NETWORKING_ROOT_DIR}/networking.cmake)
 
 # tools
 include("${CMAKE_CURRENT_LIST_DIR}/networking/CMakeLists.txt")
