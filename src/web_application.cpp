@@ -370,6 +370,46 @@ std::string find_html_file(const std::string& __controller, const std::string& n
     return "";
 }
 
+std::string render_html_template(const std::string& html)
+{
+    std::string application_html_file_path = find_html_file("application", "application");
+
+    if(application_html_file_path.empty()) {
+        return html;
+    }
+
+    std::string content = uva::file::read_all_text<char>(application_html_file_path);
+
+    static std::string render_tag = "<render>";
+    static std::string close_render_tag = "</render>";
+
+    std::string_view content_view = content;
+    std::string formated_content;
+    formated_content.reserve(content.size()+html.size()+1024);
+
+    while(content_view.size())
+    {
+        char c = content_view.front();
+
+        if(c == '<') {
+            if(content_view.starts_with(render_tag))
+            {
+                formated_content += html;
+                content_view.remove_prefix(render_tag.size());
+                continue;
+            } else if(content_view.starts_with(close_render_tag)) {
+                content_view.remove_prefix(close_render_tag.size());
+                continue;
+            }
+        }
+
+        formated_content.push_back(content_view.front());
+        content_view.remove_prefix(1);
+    }
+
+    return formated_content;
+}
+
 std::string format_html_file(const std::string& path, const var& locals)
 {
     static std::string var_tag = "<var>";
@@ -447,7 +487,7 @@ std::string format_html_file(const std::string& path, const var& locals)
         index++;
     }
 
-    return formated_content;
+    return render_html_template(formated_content);
 }
 
 http_message& uva::networking::operator+=(http_message& http_message, std::map<var,var>&& __body)
