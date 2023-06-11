@@ -239,6 +239,8 @@ void proccess_request(http_message request)
                 {".svg",  "image/svg+xml"},
                 {".mp4",  "video/mp4"},
                 {".webm", "video/webm"},
+                {".mpd",  "video/mp4"},
+                {".m4s",  "video/m4s"},
                 {".ogg",  "audio/ogg"},
                 {".mp3",  "audio/mpeg"},
                 {".wav",  "audio/wav"},
