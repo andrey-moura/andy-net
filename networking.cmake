@@ -13,6 +13,13 @@ function(add_web_app name)
 
         "${CMAKE_CURRENT_LIST_DIR}/include/models/*.hpp"
         "${CMAKE_CURRENT_LIST_DIR}/src/models/*.cpp"
+
+        "${CMAKE_CURRENT_LIST_DIR}/include/jobs/*.hpp"
+        "${CMAKE_CURRENT_LIST_DIR}/src/jobs/*.cpp"
+    )
+
+    file(GLOB_RECURSE jobs_files CONFIGURE_DEPENDS 
+        "${CMAKE_CURRENT_LIST_DIR}/src/jobs/*.cpp"
     )
 
     SET(source_files
@@ -22,9 +29,7 @@ function(add_web_app name)
     include_directories("${CMAKE_CURRENT_LIST_DIR}/include/controllers")
     include_directories("${CMAKE_CURRENT_LIST_DIR}/include/helpers")
     include_directories("${CMAKE_CURRENT_LIST_DIR}/include/models")
-
-    message(STATUS "Get these files: ${source_files}")
-
+    include_directories("${CMAKE_CURRENT_LIST_DIR}/include/jobs")
     
     add_executable(
         # The name of your game
@@ -32,6 +37,20 @@ function(add_web_app name)
         
         ${source_files}
     )
+
+    foreach (job_file IN LISTS jobs_files)
+        get_filename_component(job_name ${job_file} NAME_WLE)
+
+        string(REPLACE "_" "-"   job_executable ${job_name})
+
+        message(STATUS "Found job: ${job_name} (${job_executable})")
+
+        add_executable(${job_executable} ${job_file})
+        target_link_libraries(${job_executable} uva-job uva-console uva-json)
+        target_compile_definitions(${job_executable} PUBLIC -D__UVA_JOB_COMPILATION__=1)
+
+        add_dependencies(${name} ${job_executable})
+    endforeach()
     
     target_compile_definitions(${name} PUBLIC -DAPP_ROOT="${CMAKE_CURRENT_LIST_DIR}")
 
@@ -39,6 +58,6 @@ function(add_web_app name)
         target_link_options(${name} PUBLIC /SAFESEH:NO)
     endif()
 
-    target_link_libraries(${name} uva-json uva-networking)
-
+    target_link_libraries(${name} uva-json uva-networking uva-job)
+    
 endfunction(add_web_app)
