@@ -111,8 +111,10 @@ static std::map<content_type, std::string> s_content_types
 {
     { content_type::text_html,        "text/html" },
     { content_type::image_jpeg,       "image/jpeg" },
+    { content_type::image_png,        "image/png" },
     { content_type::text_css,         "text/css" },
     { content_type::application_json, "application/json" },
+    { content_type::application_javascript, "application/javascript" },
 };
 
 static std::string s_server_version = "0.0.1";

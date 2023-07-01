@@ -34,6 +34,8 @@ namespace uva
         enum class content_type {
             /* updates here must reflect on s_content_types */
             application_json,
+            application_javascript,
+            image_png,
             image_jpeg,
             text_html,
             text_css,
