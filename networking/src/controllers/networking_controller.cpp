@@ -84,7 +84,8 @@ void networking_controller::new_controller()
     std::string controller_name = params[0];
 
     const char* const controller_header_format =
-R"~~~(#include <web_application.hpp>
+R"~~~(#pragma once
+#include <web_application.hpp>
 
 using namespace uva;
 using namespace routing;
