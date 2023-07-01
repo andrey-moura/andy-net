@@ -50,8 +50,18 @@ function(add_web_app name)
 
             message(STATUS "Found job: ${job_name} (${job_executable})")
 
-            add_executable(${job_executable} ${job_file})
-            target_link_libraries(${job_executable} uva-job uva-console uva-json)
+            file(GLOB_RECURSE job_source_files CONFIGURE_DEPENDS 
+                "${CMAKE_CURRENT_LIST_DIR}/include/models/*.hpp"
+                "${CMAKE_CURRENT_LIST_DIR}/src/models/*.cpp"
+            )
+
+            SET(job_source_files
+                ${job_file}
+                ${job_source_files}
+            )
+
+            add_executable(${job_executable} ${job_source_files})
+            target_link_libraries(${job_executable} uva-job uva-console uva-json uva-database)
             target_compile_definitions(${job_executable} PUBLIC -D__UVA_JOB_COMPILATION__=1)
 
             add_dependencies(${name} ${job_executable})
@@ -72,6 +82,6 @@ function(add_web_app name)
         target_link_options(${name} PUBLIC /SAFESEH:NO)
     endif()
 
-    target_link_libraries(${name} uva-json uva-networking)
+    target_link_libraries(${name} uva-json uva-networking uva-job uva-database)
     
 endfunction(add_web_app)
