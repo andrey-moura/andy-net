@@ -191,14 +191,12 @@ std::string parse_string_from_web(std::string_view sv)
 
 void proccess_request(http_message request)
 {
-    current_response.type = content_type::text_html;
+    uva::networking::content_type initialized_type = (uva::networking::content_type)-1;
+    current_response.type = initialized_type;
     current_response.status = status_code::no_content;
     current_response.raw_body = "";
 
     format_on_cout("\n\nStarted {} {} for {} with params:\n{}\nand headers: {}", request.method, request.url, request.endpoint, request.params.to_s(), request.headers.to_s());
-
-    std::string action;
-    std::string controller;
 
     /*An HTTP/1.1 server MAY assume that a HTTP/1.1 client intends to
     maintain a persistent connection unless a Connection header including
@@ -251,7 +249,7 @@ void proccess_request(http_message request)
             auto it = mime_types.find(uva::string::tolower(ext));
             
             if(it == mime_types.end()) {
-                respond html_template("error", {
+                respond html_template_for_controller("web_application_controller", "error", {
                     { "error_type", "Filesystem Error" },
                     { "error_title", "File Not Found" },
                     { "error_description", std::format("The file {} has invalid extension.", ext) },
@@ -260,28 +258,54 @@ void proccess_request(http_message request)
                 current_response.headers = var::map();
                 current_response.headers["Content-type"] = it->second;
                 current_response.status = status_code::ok;
+                current_response.type = content_type_from_string(it->second);
                 current_response.raw_body = uva::file::read_all_text<char>(path);
-
             }
 
             request.connection->write_response(std::move(current_response));
         } else {
 
-            std::string route = request.method + " " + request.url;
+            std::string route = request.url;
+
+            if(route.size() > 1 && route.front() == '/')  {
+                route = route.substr(1);
+            }
+
+            route = request.method + " " + route;
 
             try {
                 basic_action_target target = find_dispatch_target(route, request.connection->get_shared_pointer());
                 if(target.controller) {
+                    std::string action = target.action;
                     {
                         std::shared_ptr<basic_web_controller> web_controller = std::dynamic_pointer_cast<web_application::basic_web_controller>(target.controller);
                         if(web_controller) {
                             //Following lines are generating exceptions
-                            target.controller->params = request.params;
+                            var params = request.params;
+                            for(auto pair : target.controller->params.as<var::var_type::map>()) {
+                                params[pair.first] = pair.second;
+                            }
+                            target.controller->params = std::move(params);
                             web_controller->request = std::move(request);
 
+                            //Clear locals just in case
+                            web_controller->locals.clear();
+
                             dispatch(target, request.connection->get_shared_pointer());
+
+                            //no render called
+                            if(current_response.type == initialized_type) {
+
+                                auto locals = web_controller->locals.as<var::var_type::map>();
+
+                                respond html_template_for_controller(web_controller->name, std::move(action), std::move(locals) )
+                                        with_status status_code::ok;
+                            }
+
+                            //Clear locals
+                            web_controller->locals.clear();
                         } else {
-                            respond html_template("error", {
+                            respond html_template_for_controller("web_application_controller", "error", {
                                 { "error_type", "Implementation Error" },
                                 { "error_title", "Cannot Cast To <i>uva::networking::web_application::basic_web_controller</i>" },
                                 { "error_description", std::format("Class <i>{}<i/> cannot be casted to <i>basic_web_controller</i>. "
@@ -291,7 +315,7 @@ void proccess_request(http_message request)
                         }
                     }
                 } else {
-                    respond html_template("error", {
+                    respond html_template_for_controller("web_application_controller", "error", {
                         { "error_type", "Routing Error" },
                         { "error_title", "Route Not Found" },
                         { "error_description", std::format("No Route Matches {}", route) },
@@ -304,7 +328,7 @@ void proccess_request(http_message request)
                 //write 500 response
                 log_error("Exception during dispatch: {}", e.what());
 
-                respond html_template("error", {
+                respond html_template_for_controller("web_application_controller", "error", {
                     { "error_type", "Unhandled Exception" },
                     { "error_title", "Unhandled Exception" },
                     { "error_description", std::format("An unhandled exception has been caught: {}", e.what()) },
@@ -344,12 +368,10 @@ void acceptor(asio::ip::tcp::acceptor& asioAcceptor, protocol __protocol) {
 	});
 }
 
-std::string find_html_file(const std::string& __controller, const std::string& name)
+static std::vector<std::string> html_template_extensions = { "cpp.html", "html" };
+
+std::filesystem::path folder_for_controller_templates(const std::string& __controller)
 {
-    std::string folder;
-
-    static std::vector<std::string> extensions = { "cpp.html", "html" };
-
     std::string controller;
 
     std::string sufix = "_controller";
@@ -360,10 +382,18 @@ std::string find_html_file(const std::string& __controller, const std::string& n
         controller = __controller;
     }
 
-    std::filesystem::path possibility = app_dir / "app" / "views" / controller / name;
+    return app_dir / "app" / "views" / controller;
+}
 
-    for(const std::string& extension : extensions) {
-        possibility = possibility.replace_extension(extension);
+std::string find_html_file(const std::string& __controller, const std::string& name)
+{
+    std::filesystem::path folder = folder_for_controller_templates(__controller);
+    std::filesystem::path file   = folder / name;
+
+    for(const std::string& extension : html_template_extensions) {
+        std::filesystem::path possibility = file;
+        possibility.replace_extension(extension);
+
         if(std::filesystem::exists(possibility)) {
             return possibility.string();
         }
@@ -414,8 +444,15 @@ std::string render_html_template(const std::string& html)
 
 std::string format_html_file(const std::string& path, const var& locals)
 {
+    std::string buffer;
+    buffer.reserve(256);
+
     static std::string var_tag = "<var>";
     static std::string close_var_tag = "</var>";
+
+    //<if current_user_is_master>
+    static std::string if_tag = "<if ";
+    static std::string close_if_tag = "</if>";
 
     std::string formated_content;
     std::string content = uva::file::read_all_text<char>(path);
@@ -450,7 +487,7 @@ std::string format_html_file(const std::string& path, const var& locals)
 
                     if(value != null)
                     {
-                        formated_content += value.to_typed_s('[', ']');
+                        formated_content += value.to_s();
                     }
                 } else {
                     std::string params = current_var_name.substr(parentheses_index);
@@ -482,7 +519,48 @@ std::string format_html_file(const std::string& path, const var& locals)
                 }
 
             }
-        } else {
+        } else if(formated_content.ends_with(if_tag))
+        {
+            buffer.clear();
+
+            formated_content.resize(formated_content.size()-if_tag.size());
+
+            while(isspace(content[index])) {
+                ++index;
+            }
+
+            while(!isspace(content[index]) && content[index] != '>') {
+                buffer.push_back(content[index]);
+                ++index;
+            }
+
+            while(isspace(content[index])) {
+                ++index;
+            }
+
+            if(content[index] != '>') {
+                throw std::runtime_error(std::format("error: unexpected sequence after if condition"));
+            }
+
+            ++index;
+
+            var value = locals.fetch(buffer);
+
+            bool has_met_condition = (bool)value;
+
+            std::string_view content_view(content.c_str() + index, content.size()-index);
+
+            while(!content_view.starts_with(close_if_tag)) {
+                if(has_met_condition) {
+                    formated_content.push_back(content[index]);
+                }
+                content_view.remove_prefix(1);
+                ++index;
+            }
+
+            index += close_var_tag.size();
+        }
+        else {
             formated_content.push_back(content[index]);
         }
 
@@ -515,10 +593,33 @@ http_message &uva::networking::operator<<(http_message &http_message, const web_
     std::string path = find_html_file(__template.controller, __template.file_name);
 
     if(path.empty()) {
-        //throw error
-    }
+        // respond html_template("error", {
+        //     { "error_type", "Implementation Error" },
+        //     { "error_title", "Cannot find template for action <i>{}</i> in <i>{}</i>" },
+        //     { "error_description", std::format("A template with name <i>{}</i> was expected to exists in <i>{}</i>.<br/>"
+        //                                             "Tried the following extensions: [<i>{}</i>] <br/>"
+        //                                             "Maybe have you forgotten to create the template file?", __template.file_name, __template.controller,
+        //                                                                                                      __template.file_name, folder_for_controller_templates(__template.controller),
+        //                                                                                                      uva::string::join(uva::string::map(html_template_extensions, [](const std::string& ext){ return "\"" + ext + "\"" }), ", ")) },
+        // }) with_status status_code::internal_server_error;
 
-    http_message.raw_body = format_html_file(path, __template.locals); 
+        respond html_template_for_controller("web_application_controller", "error", {
+            { "error_type", "Implementation Error" },
+            { "error_title", std::format("Cannot find template for action <i>{}</i> in <i>{}</i>", __template.file_name, __template.controller) },
+            { "error_description", std::format("A template with name <i>{}</i> was expected to exists in <i>{}</i>.<br/>"
+                                               "Tried the following extensions: [<i>{}</i>] <br/>", __template.file_name,
+                                                                                                    folder_for_controller_templates(__template.controller).string(),
+                                                                                                    uva::string::join(
+                                                                                                        uva::string::map(html_template_extensions,
+                                                                                                                            [](const std::string& ext){
+                                                                                                                                return "\"" + ext + "\"";
+                                                                                                                            }),
+                                                                                                                    ", ")
+                                                                                                    )}
+        }) with_status status_code::internal_server_error;
+    } else {
+        http_message.raw_body = format_html_file(path, __template.locals); 
+    }
 
     return http_message;
 }
@@ -555,6 +656,12 @@ http_message &uva::networking::redirect_to(const std::string &url, const var &pa
 
 uva::networking::web_application::basic_html_template::basic_html_template(std::string &&__file_name, std::map<var,var> &&__locals, const std::string& __controller)
     : file_name(std::forward<std::string&&>(__file_name)), locals(std::forward<std::map<var,var>&&>(__locals)), controller(__controller)
+{
+
+}
+
+uva::networking::web_application::basic_html_template::basic_html_template(std::string &&__file_name, std::shared_ptr<basic_web_controller> __controller)
+    : file_name(std::forward<std::string&&>(__file_name)), locals(__controller->locals), controller(__controller->name)
 {
 
 }
