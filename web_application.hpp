@@ -24,7 +24,7 @@ namespace uva
     {
         namespace web_application
         {
-            class basic_web_controller : public uva::routing::basic_controller
+            class basic_web_controller : public uva::routing::basic_controller, public std::enable_shared_from_this<basic_web_controller>
             {
             public:
                 http_message request;
@@ -69,7 +69,7 @@ namespace uva
 
 #define respond uva::networking::web_application::current_response
 #define JSON +=
-#define html_template(file_name) << basic_html_template(file_name, this)
+#define html_template(file_name) << basic_html_template(file_name, shared_from_this())
 #define html_template_for_controller(controller_name, file_name, ...) << basic_html_template(file_name, __VA_ARGS__, controller_name)
 #define css_file(file_name) << basic_css_file(file_name)
 #define with_status ; uva::networking::web_application::current_response <<
