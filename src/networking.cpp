@@ -109,12 +109,14 @@ static std::map<status_code, std::string> s_status_codes
 
 static std::map<content_type, std::string> s_content_types
 {
-    { content_type::text_html,        "text/html" },
-    { content_type::image_jpeg,       "image/jpeg" },
-    { content_type::image_png,        "image/png" },
-    { content_type::text_css,         "text/css" },
-    { content_type::application_json, "application/json" },
+    { content_type::text_html,              "text/html" },
+    { content_type::image_jpeg,             "image/jpeg" },
+    { content_type::image_png,              "image/png" },
+    { content_type::text_css,               "text/css" },
+    { content_type::application_json,       "application/json" },
     { content_type::application_javascript, "application/javascript" },
+    { content_type::video_mp4,              "video/mp4" },
+    { content_type::video_m4s,              "video/m4s" },
 };
 
 static std::string s_server_version = "0.0.1";
