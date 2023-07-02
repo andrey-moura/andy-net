@@ -487,7 +487,11 @@ std::string format_html_file(const std::string& path, const var& locals)
 
                     if(value != null)
                     {
-                        formated_content += value.to_s();
+                        if(value.type == var::var_type::string) {
+                            formated_content += value.as<var::var_type::string>();
+                        } else {
+                            formated_content += value.to_typed_s('[', ']');
+                        }
                     }
                 } else {
                     std::string params = current_var_name.substr(parentheses_index);
