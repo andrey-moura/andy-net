@@ -42,6 +42,7 @@ namespace uva
             video_mp4,
             video_mpd,
             video_m4s,
+            image_gif,
         };
         const std::string& content_type_to_string(const content_type& status);
         content_type content_type_from_string(const std::string& status);
