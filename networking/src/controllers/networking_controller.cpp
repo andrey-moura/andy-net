@@ -56,7 +56,7 @@ add_custom_command(TARGET {}
                    POST_BUILD
                    COMMAND ${{CMAKE_COMMAND}} -E copy $<TARGET_FILE:{}> ${{CMAKE_SOURCE_DIR}}/bin/{})
 
-)~~~", project_name.downcase(), project_name.downcase(), project_name.downcase(), project_name.downcase(), project_name.downcase(), project_name.downcase());
+)~~~", project_name.to_downcase(), project_name.to_downcase(), project_name.to_downcase(), project_name.to_downcase(), project_name.to_downcase(), project_name.to_downcase());
 
     uva::file::write_all_text(project_root / "CMakeLists.txt", cmake_template);
 
