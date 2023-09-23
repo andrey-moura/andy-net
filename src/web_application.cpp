@@ -737,7 +737,7 @@ void web_application::init(int argc, const char **argv)
         } else {
             m_asioAcceptor = new asio::ip::tcp::acceptor(*io_context, asio::ip::tcp::endpoint(asio::ip::tcp::v4(), std::stoi(port)));
         }
-    } catch(std::exception e)
+    } catch(std::exception& e)
     {
         log_error("Failed to start listening: {}", e.what());
         return;
