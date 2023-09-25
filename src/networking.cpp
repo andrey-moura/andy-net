@@ -27,7 +27,7 @@ void asio_thread_loop()
     std::cout << "Running ASIO..." << std::endl;
     try {
         io_context->run();
-    } catch(std::exception e)
+    } catch(std::exception& e)
     {
         log_error("Exception caught at ASIO thread: {}", e.what());
         asio_thread_loop();
