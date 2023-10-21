@@ -28,6 +28,7 @@ namespace uva
             {
             public:
                 http_message request;
+                var cookies;
             };
             extern http_message current_response;
             extern std::filesystem::path app_dir;

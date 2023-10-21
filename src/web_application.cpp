@@ -16,6 +16,7 @@
 #include <web_application.hpp>
 #include <file.hpp>
 #include <console.hpp>
+#include <time.hpp>
 
 using namespace uva;
 using namespace console;
@@ -28,6 +29,14 @@ http_message web_application::current_response;
 std::string name = "web_application";
 
 class web_connection;
+
+bool next_non_white_space1(std::string_view& sv) {
+    while(sv.size() && isspace(sv[0])) {
+        sv.remove_prefix(1);
+    }
+
+    return sv.size();
+}
 
 void proccess_request(std::shared_ptr<web_connection> connection, bool new_connection = false);
 asio::ip::tcp::acceptor* m_asioAcceptor = nullptr;
@@ -124,9 +133,9 @@ void web_connection::write_response(http_message&& message)
 void web_connection::write_front_response()
 {
     /* The scope is already locked by write_response */
-    const http_message& response = m_response_deque.front();
+    http_message& response = m_response_deque.front();
 
-    async_write_http_response(m_socket, response.raw_body, response.status, response.type, [this](uva::networking::error_code ec) {
+    async_write_http_response(m_socket, response, [this](uva::networking::error_code ec) {
         m_response_deque.pop_front();
 
         if(m_response_deque.size()) {
@@ -196,7 +205,7 @@ void proccess_request(http_message request)
     current_response.status = status_code::no_content;
     current_response.raw_body = "";
 
-    format_on_cout("\n\nStarted {} {} for {} with params:\n{}\nand headers: {}", request.method, request.url, request.endpoint, request.params.to_s(), request.headers.to_s());
+    format_on_cout("\n\nStarted {} {} for {} at {}\nparams:\n{}\nheaders: {}", request.method, request.url, request.endpoint, time::iso_now(), request.params.to_s(), request.headers.to_s());
 
     /*An HTTP/1.1 server MAY assume that a HTTP/1.1 client intends to
     maintain a persistent connection unless a Connection header including
@@ -207,22 +216,17 @@ void proccess_request(http_message request)
         should_close = true;
     }
 
-    //asking asset
-    if(request.url.ends_with(".css")) {
-        respond css_file(request.url);
+    //Todo: documentation and refactoration for files
+    std::string relative = parse_string_from_web(request.url);
 
-        request.connection->write_response(std::move(current_response));
-    } else {
-        //Todo: documentation and refatoration for files
-        std::string relative = parse_string_from_web(request.url);
+    if(relative.starts_with('/') || relative.starts_with('\\')) {
+        relative.erase(0, 1);
+    }
 
-        if(relative.starts_with('/') || relative.starts_with('\\')) {
-            relative.erase(0, 1);
-        }
-
+    if(relative.starts_with("public/")) {
         std::filesystem::path path = (app_dir / "app" / relative).make_preferred();
 
-        if(request.url.find('.') != std::string::npos && std::filesystem::exists(path)) {
+        if(std::filesystem::exists(path)) {
             //generated using OpenAI
             //Gere um std::map onde as keys são extensão de arquivos e o valor são MIME Type. Faça isso para os valores mais comuns para o MIME type
             std::map<std::string, std::string> mime_types {
@@ -264,78 +268,146 @@ void proccess_request(http_message request)
 
             request.connection->write_response(std::move(current_response));
         } else {
+            respond html_template_for_controller("web_application_controller", "error", {
+                { "error_type", "Filesystem Error" },
+                { "error_title", "File Not Found" },
+                { "error_description", std::format("The requested file '{}' can not be found.", request.url) },
+            }) with_status status_code::not_found;
 
-            std::string route = request.url;
+            request.connection->write_response(std::move(current_response));
+        }
+    } else
+    {
+        std::string route = request.url;
 
-            if(route.size() > 1 && route.front() == '/')  {
-                route = route.substr(1);
-            }
+        if(route.size() > 1 && route.front() == '/')  {
+            route = route.substr(1);
+        }
 
-            route = request.method + " " + route;
+        route = request.method + " " + route;
 
-            try {
-                basic_action_target target = find_dispatch_target(route, request.connection->get_shared_pointer());
-                if(target.controller) {
-                    std::string action = target.action;
-                    {
-                        std::shared_ptr<basic_web_controller> web_controller = std::dynamic_pointer_cast<web_application::basic_web_controller>(target.controller);
-                        if(web_controller) {
-                            //Following lines are generating exceptions
-                            var params = request.params;
-                            for(auto pair : target.controller->params.as<var::var_type::map>()) {
-                                params[pair.first] = pair.second;
-                            }
-                            target.controller->params = std::move(params);
-                            web_controller->request = std::move(request);
+        try {
+            basic_action_target target = find_dispatch_target(route, request.connection->get_shared_pointer());
 
-                            //Clear locals just in case
-                            web_controller->locals.clear();
-
-                            dispatch(target, request.connection->get_shared_pointer());
-
-                            //no render called
-                            if(current_response.type == initialized_type) {
-
-                                auto locals = web_controller->locals.as<var::var_type::map>();
-
-                                respond html_template_for_controller(web_controller->name, std::move(action), std::move(locals) )
-                                        with_status status_code::ok;
-                            }
-
-                            //Clear locals
-                            web_controller->locals.clear();
-                        } else {
-                            respond html_template_for_controller("web_application_controller", "error", {
-                                { "error_type", "Implementation Error" },
-                                { "error_title", "Cannot Cast To <i>uva::networking::web_application::basic_web_controller</i>" },
-                                { "error_description", std::format("Class <i>{}<i/> cannot be casted to <i>basic_web_controller</i>. "
-                                                                        "Maybe have you forgotten to derive from <i>basic_web_controller<i> in your controller "
-                                                                        "definition or declared it as a private base class?", target.controller->name) },
-                            }) with_status status_code::internal_server_error;
+            if(target.controller) {
+                std::string action = target.action;
+                {
+                    std::shared_ptr<basic_web_controller> web_controller = std::dynamic_pointer_cast<web_application::basic_web_controller>(target.controller);
+                    if(web_controller) {
+                        //Following lines are generating exceptions
+                        var params = request.params;
+                        for(auto pair : target.controller->params.as<var::map>()) {
+                            params[pair.first] = pair.second;
                         }
+
+                        var::map_type cookies;
+
+                        if(request.headers && request.headers.is_a<var::map>()) {
+                            auto& headers_map = request.headers.as<var::map>();
+
+                            auto it = headers_map.find("Cookie");
+
+                            if(it != headers_map.end()) {
+                                var cookie_var_str = std::move(it->second);
+                                headers_map.erase(it);
+
+                                if(cookie_var_str.is_a<var::string>()) {
+                                    std::string cookie_str = std::move(cookie_var_str.as<var::string>());
+
+                                    std::string_view cookie_str_view = cookie_str;
+
+                                    std::string key;
+                                    std::string value;
+
+                                    while(cookie_str_view.size()) {
+                                        key.clear();
+                                        value.clear();
+
+                                        next_non_white_space1(cookie_str_view);
+
+                                        while(cookie_str_view.size() && cookie_str_view[0] != '=') {
+                                            key.push_back(cookie_str_view.front());
+                                            cookie_str_view.remove_prefix(1);
+                                        }
+
+                                        if(!key.size()) {
+                                            break;
+                                        }
+
+                                        if(cookie_str_view.size()) {
+                                            cookie_str_view.remove_prefix(1);
+                                        }
+
+                                        next_non_white_space1(cookie_str_view);
+
+                                        while(cookie_str_view.size() && cookie_str_view[0] != ';') {
+                                            value.push_back(cookie_str_view.front());
+                                            cookie_str_view.remove_prefix(1);
+                                        }
+
+                                        if(cookie_str_view.size()) {
+                                            cookie_str_view.remove_prefix(1);
+                                        }
+
+                                        next_non_white_space1(cookie_str_view);
+
+                                        cookies[key] = value;
+                                    }
+                                }
+                            }
+                        }
+
+                        target.controller->params = std::move(params);
+                        web_controller->request = std::move(request);
+                        web_controller->cookies = std::move(cookies);
+
+                        //Clear locals just in case
+                        web_controller->locals.clear();
+
+                        dispatch(target, request.connection->get_shared_pointer());
+
+                        //no render called
+                        if(current_response.type == initialized_type) {
+
+                            auto locals = web_controller->locals.as<var::map>();
+
+                            respond html_template_for_controller(web_controller->name, std::move(action), std::move(locals) )
+                                    with_status status_code::ok;
+                        }
+
+                        //Clear locals
+                        web_controller->locals.clear();
+                    } else {
+                        respond html_template_for_controller("web_application_controller", "error", {
+                            { "error_type", "Implementation Error" },
+                            { "error_title", "Cannot Cast To <i>uva::networking::web_application::basic_web_controller</i>" },
+                            { "error_description", std::format("Class <i>{}<i/> cannot be casted to <i>basic_web_controller</i>. "
+                                                                    "Maybe have you forgotten to derive from <i>basic_web_controller<i> in your controller "
+                                                                    "definition or declared it as a private base class?", target.controller->name) },
+                        }) with_status status_code::internal_server_error;
                     }
-                } else {
-                    respond html_template_for_controller("web_application_controller", "error", {
-                        { "error_type", "Routing Error" },
-                        { "error_title", "Route Not Found" },
-                        { "error_description", std::format("No Route Matches {}", route) },
-                    }) with_status status_code::not_found;
                 }
-
-                request.connection->write_response(std::move(current_response));
-            } catch(std::exception e)
-            {
-                //write 500 response
-                log_error("Exception during dispatch: {}", e.what());
-
+            } else {
                 respond html_template_for_controller("web_application_controller", "error", {
-                    { "error_type", "Unhandled Exception" },
-                    { "error_title", "Unhandled Exception" },
-                    { "error_description", std::format("An unhandled exception has been caught: {}", e.what()) },
-                }) with_status status_code::internal_server_error;
-
-                request.connection->write_response(std::move(current_response));
+                    { "error_type", "Routing Error" },
+                    { "error_title", "Route Not Found" },
+                    { "error_description", std::format("No Route Matches {}", route) },
+                }) with_status status_code::not_found;
             }
+
+            request.connection->write_response(std::move(current_response));
+        } catch(std::exception& e)
+        {
+            //write 500 response
+            log_error("Exception during dispatch: {}", e.what());
+
+            respond html_template_for_controller("web_application_controller", "error", {
+                { "error_type", "Unhandled Exception" },
+                { "error_title", "Unhandled Exception" },
+                { "error_description", std::format("An unhandled exception has been caught: {}", e.what()) },
+            }) with_status status_code::internal_server_error;
+
+            request.connection->write_response(std::move(current_response));
         }
     }
 
@@ -402,22 +474,26 @@ std::string find_html_file(const std::string& __controller, const std::string& n
     return "";
 }
 
-std::string render_html_template(const std::string& html)
+std::string format_html_file(const std::string& path, var& locals);
+
+std::string render_html_template(const std::string& path, var& locals)
 {
+    std::string formatted_html = format_html_file(path, locals);
+
     std::string application_html_file_path = find_html_file("application", "application");
 
     if(application_html_file_path.empty()) {
-        return html;
+        return formatted_html;
     }
 
-    std::string content = uva::file::read_all_text<char>(application_html_file_path);
+    std::string content = format_html_file(application_html_file_path, locals);
 
     static std::string render_tag = "<render>";
     static std::string close_render_tag = "</render>";
 
     std::string_view content_view = content;
     std::string formated_content;
-    formated_content.reserve(content.size()+html.size()+1024);
+    formated_content.reserve(content.size()+formatted_html.size()+1024);
 
     while(content_view.size())
     {
@@ -426,7 +502,7 @@ std::string render_html_template(const std::string& html)
         if(c == '<') {
             if(content_view.starts_with(render_tag))
             {
-                formated_content += html;
+                formated_content += formatted_html;
                 content_view.remove_prefix(render_tag.size());
                 continue;
             } else if(content_view.starts_with(close_render_tag)) {
@@ -442,137 +518,290 @@ std::string render_html_template(const std::string& html)
     return formated_content;
 }
 
-std::string format_html_file(const std::string& path, const var& locals)
+std::string format_html_content(std::string_view content, var& locals);
+
+void locals_render(std::string_view keyword_open, std::string_view keyword_attributes, std::string_view keyword_content, std::string& output_html, var& locals)
 {
-    std::string buffer;
-    buffer.reserve(256);
+    var value;
+    std::string path;
 
-    static std::string var_tag = "<var>";
-    static std::string close_var_tag = "</var>";
+    while(keyword_content.size())
+    {
+        path.push_back(keyword_content.front());
 
-    //<if current_user_is_master>
-    static std::string if_tag = "<if ";
-    static std::string close_if_tag = "</if>";
+        if(path.ends_with('.')) {
+            path.pop_back();
 
+            if(value.is_null()) {
+                value = locals.fetch(path);
+            } else {
+                value = value.fetch(path);
+            }
+
+            path.clear();
+        }
+
+        keyword_content.remove_prefix(1);
+    }
+
+    if(value.is_null()) {
+        value = locals.fetch(path);
+    } else {
+        value = value.fetch(path);
+    }
+
+    if(value != null)
+    {
+        if(value.is_a<var::string>()) {
+            output_html += value.as<var::string>();
+        }
+        else {
+            output_html += value.to_typed_s('[', ']');
+        }
+    }
+}
+
+std::string_view extract_word(std::string_view& sv)
+{
+    size_t word_size = 0;
+
+    while(word_size < sv.size()) {
+        if(isspace(sv[word_size])) {
+            break;
+        }
+
+        ++word_size;
+    }
+   
+    std::string_view word = sv.substr(0, word_size);
+    sv = sv.substr(word_size);
+
+    return word;
+}
+
+void foreach_render(std::string_view keyword_open, std::string_view keyword_attributes, std::string_view keyword_content, std::string& output_html, var& locals)
+{
+    //<foreach product : products >
+    
+    if(!next_non_white_space1(keyword_attributes)) {
+        //exception
+        return;
+    }
+
+    std::string_view iterator_name = extract_word(keyword_attributes);
+
+    if(!next_non_white_space1(keyword_attributes)) {
+        //exception
+        return;
+    }
+
+    std::string_view in = extract_word(keyword_attributes);
+
+    if(in.empty() || in != "in") {
+        //exception
+        return;
+    }
+
+    if(!next_non_white_space1(keyword_attributes)) {
+        //exception
+        return;
+    }
+
+    std::string_view variable_name = extract_word(keyword_attributes);
+
+    var variable = locals.fetch(std::string(variable_name));
+
+    struct foreach_render_data {
+        std::string& __output_html;
+        std::string_view& __keyword_content;
+        std::string __iterator_name;
+        var& __locals;
+    };
+
+    foreach_render_data data = {
+        output_html,
+        keyword_content,
+        std::string(iterator_name),
+        locals
+    };
+
+    variable.for_each<var>([](var& value, void* void_data) {
+       foreach_render_data* pData = (foreach_render_data*)void_data;
+
+       pData->__locals[pData->__iterator_name] = value;
+
+       std::string formatted_keyword_content = format_html_content(pData->__keyword_content, pData->__locals);
+        pData->__output_html += formatted_keyword_content;
+    }, (void*)&data);
+}
+
+void component_render(std::string_view keyword_open, std::string_view keyword_attributes, std::string_view keyword_content, std::string& output_html, var& locals)
+{
+    std::string_view component_name = keyword_open;
+
+    while(component_name.size() && !component_name.ends_with('-')) {
+        component_name.remove_suffix(1);
+    }
+
+    if(!component_name.ends_with('-')) {
+        //exception
+        return;
+    }
+
+    component_name.remove_suffix(1);
+
+    auto component_path = app_dir / "app" / "views" / "components" / component_name;
+    component_path.replace_extension(".cpp.html");
+
+    std::string component_path_string = component_path;
+
+    if(std::filesystem::exists(component_path_string)) {
+        std::string component = format_html_file(component_path, locals);
+        output_html.append(component);
+    } else {
+        //exception
+        return;
+    }
+}
+
+typedef void(*reserved_keyword_render)(std::string_view keyword_open, std::string_view keyword_attributes, std::string_view keyword_content, std::string& output_html, var& locals);
+
+struct reserved_keywords
+{
+    reserved_keywords(std::string __tag, reserved_keyword_render __render, bool __is_suffix = false)
+        :
+        tag(__tag),
+        render(__render),
+        is_suffix(__is_suffix)
+    {
+
+    }
+
+    std::string tag;
+    bool is_suffix = false;
+
+    reserved_keyword_render render;
+};
+
+std::string format_html_content(std::string_view content_view, var& locals)
+{
     std::string formated_content;
+    formated_content.reserve(content_view.size());
+
+    std::string tag_name;
+    tag_name.reserve(128);
+
+    std::vector<reserved_keywords> keywords = {
+        { "locals",     locals_render          },
+        { "foreach",    foreach_render         },
+        { "-component", component_render, true },
+    };
+
+    size_t last_open_tag = std::string::npos;
+
+    while(content_view.size())
+    {
+        while(content_view.size() && content_view[0] != '<') {
+            //if(content_view[0] == '<') {
+                //last_open_tag = content_view.data() - content.data();
+            //}
+
+            formated_content.push_back(content_view[0]);
+            content_view.remove_prefix(1);
+        }
+
+        //prevent waste of time when the next character is '/' ( </ )
+        if(content_view.size() > 1 && content_view[1] != '/') {
+            std::string_view possible_keyword_view = content_view;
+            possible_keyword_view.remove_prefix(1);
+
+            size_t tag_name_size = 0;
+            while(possible_keyword_view.size() && (isalpha(possible_keyword_view[tag_name_size]) || possible_keyword_view[tag_name_size] == '-' )) {
+                tag_name_size++;
+            }
+
+            possible_keyword_view = possible_keyword_view.substr(0, tag_name_size);
+
+            for(size_t keyword_index = 0; keyword_index < keywords.size(); ++keyword_index) {
+                if((keywords[keyword_index].is_suffix && possible_keyword_view.ends_with(keywords[keyword_index].tag)) || possible_keyword_view.starts_with(keywords[keyword_index].tag)) {
+                    std::string_view keyword_content_view = content_view;
+                    keyword_content_view.remove_prefix(tag_name_size + 1); // + '<'
+
+                    std::string_view keyword_attributes_view = keyword_content_view;
+
+                    while(keyword_content_view.size()) {
+
+                        if(keyword_content_view.starts_with('>')) {
+                            keyword_content_view.remove_prefix(1);
+                            break;
+                        }
+
+                        keyword_content_view.remove_prefix(1);
+                    }
+
+                    keyword_attributes_view = std::string_view(keyword_attributes_view.data(), keyword_content_view.data() - keyword_attributes_view.data());
+                    keyword_attributes_view.remove_suffix(1); // remove the > left above
+
+                    std::string keyword_close = "</";
+                    keyword_close.append(std::string(possible_keyword_view));
+
+                    std::string_view possible_keyword_close = keyword_content_view;
+
+                    while(possible_keyword_close.size()) {
+                        if(possible_keyword_close.size() > 1 && possible_keyword_close[0] == '<' && possible_keyword_close[1] == '/') {
+                            if(possible_keyword_close.starts_with(keyword_close)) {
+                                break;
+                            }
+                        }
+
+                        possible_keyword_close.remove_prefix(1);
+                    }
+
+                    keyword_content_view = std::string_view(keyword_content_view.data(), possible_keyword_close.data() - keyword_content_view.data());
+
+                    content_view = possible_keyword_close;
+
+                    content_view.remove_prefix(2 + tag_name_size); //</ + tag_name
+
+                    while(content_view.size() && content_view[0] != '>') {
+                        if(!isspace(content_view[0])) {
+                            //exception
+                        }
+
+                        content_view.remove_prefix(1);
+                    }
+
+                    if(content_view.size()) {
+                        content_view.remove_prefix(1); //remove >
+                    }
+
+                    reserved_keyword_render render = keywords[keyword_index].render;
+                    render(possible_keyword_view, keyword_attributes_view, keyword_content_view, formated_content, locals);
+                }
+            }
+        }
+
+        if(content_view.size()) {
+            formated_content.push_back(content_view[0]);
+            content_view.remove_prefix(1);
+        }
+    }
+
+    return formated_content;
+}
+
+std::string format_html_file(const std::string& path, var& locals)
+{
     std::string content = uva::file::read_all_text<char>(path);
 
-    if(!path.ends_with(".cpp.html")) {
+    const std::string template_extension = ".cpp.html";
+
+    if(!path.ends_with(template_extension)) {
         return content;
     }
 
-    formated_content.reserve(content.size());
-
-    size_t index = 0;
-
-    std::string current_var_name;
-
-    while(index < content.size())
-    {
-        if(formated_content.ends_with(var_tag))
-        {
-            current_var_name.push_back(content[index]);
-
-            if(current_var_name.ends_with(close_var_tag))
-            {
-                current_var_name.erase(current_var_name.end()-close_var_tag.size(), current_var_name.end());
-
-                size_t parentheses_index = current_var_name.find('(');
-
-                if(parentheses_index == std::string::npos) {
-                    var value = locals.fetch(current_var_name);
-
-                    current_var_name.clear();
-                    formated_content.erase(formated_content.end()-var_tag.size(), formated_content.end());
-
-                    if(value != null)
-                    {
-                        if(value.type == var::var_type::string) {
-                            formated_content += value.as<var::var_type::string>();
-                        }
-                        else {
-                            formated_content += value.to_typed_s('[', ']');
-                        }
-                    }
-                } else {
-                    std::string params = current_var_name.substr(parentheses_index);
-                    current_var_name = current_var_name.substr(0, parentheses_index);
-
-                    while(isspace(params.back())) {
-                        params.pop_back();
-                    }
-
-                    if(!params.ends_with(')')) {
-                        throw std::runtime_error("failed to parse HTML template: missing ')' at end of function call.");
-                    }
-
-                    params.erase(0, 1);
-                    params.pop_back();
-
-                    auto arguments = parse_argument_list(params);
-
-                    auto it = exposed_functions.find(current_var_name);
-
-                    if(it == exposed_functions.end()) {
-                        throw std::runtime_error(std::format("error: function '{}' not found", current_var_name));
-                    }
-
-                    current_var_name.clear();
-                    formated_content.erase(formated_content.end()-var_tag.size(), formated_content.end());
-
-                    formated_content += it->second(arguments);
-                }
-
-            }
-        } else if(formated_content.ends_with(if_tag))
-        {
-            buffer.clear();
-
-            formated_content.resize(formated_content.size()-if_tag.size());
-
-            while(isspace(content[index])) {
-                ++index;
-            }
-
-            while(!isspace(content[index]) && content[index] != '>') {
-                buffer.push_back(content[index]);
-                ++index;
-            }
-
-            while(isspace(content[index])) {
-                ++index;
-            }
-
-            if(content[index] != '>') {
-                throw std::runtime_error(std::format("error: unexpected sequence after if condition"));
-            }
-
-            ++index;
-
-            var value = locals.fetch(buffer);
-
-            bool has_met_condition = (bool)value;
-
-            std::string_view content_view(content.c_str() + index, content.size()-index);
-
-            while(!content_view.starts_with(close_if_tag)) {
-                if(has_met_condition) {
-                    formated_content.push_back(content[index]);
-                }
-                content_view.remove_prefix(1);
-                ++index;
-            }
-
-            index += close_var_tag.size();
-        }
-        else {
-            formated_content.push_back(content[index]);
-        }
-
-        index++;
-    }
-
-    return render_html_template(formated_content);
+    content = format_html_content(content, locals);
+    return content;
 }
 
 http_message& uva::networking::operator+=(http_message& http_message, std::map<var,var>&& __body)
@@ -623,7 +852,7 @@ http_message &uva::networking::operator<<(http_message &http_message, const web_
                                                                                                     )}
         }) with_status status_code::internal_server_error;
     } else {
-        http_message.raw_body = format_html_file(path, __template.locals); 
+        http_message.raw_body = render_html_template(path, const_cast<var&>(__template.locals)); 
     }
 
     return http_message;
@@ -653,7 +882,7 @@ http_message &uva::networking::operator<<(http_message &http_message, const web_
 
 http_message &uva::networking::redirect_to(const std::string &url, const var &params)
 {
-    current_response.status = status_code::moved;
+    current_response.status = status_code::found;
     current_response.type   = content_type::text_html;
     current_response.headers = var::map({ { "Location", url } });
     return current_response;
@@ -683,7 +912,7 @@ std::string stylesheet_path(var params)
         throw std::runtime_error("missing argument 1");
     }
 
-    if(params[0].type != var::var_type::string) {
+    if(!params[0].is_a<var::string>()) {
         throw std::runtime_error("argument 1 must by of type string");
     }
 
