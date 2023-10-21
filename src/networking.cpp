@@ -134,6 +134,8 @@ static std::map<content_type, std::string> s_content_types
     { content_type::video_mp4,              "video/mp4" },
     { content_type::video_m4s,              "video/m4s" },
     { content_type::image_gif,              "image/gif" },
+    { content_type::image_gif,              "image/gif" },
+    { content_type::image_svg_xml,          "image/svg+xml" },
 };
 
 static std::string s_server_version = "0.0.1";

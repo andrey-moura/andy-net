@@ -53,6 +53,7 @@ namespace uva
             application_javascript,
             image_png,
             image_jpeg,
+            image_svg_xml,
             text_html,
             text_css,
             video_mp4,
