@@ -579,7 +579,7 @@ void uva::networking::decode_char_from_web(std::string_view& sv, std::string &bu
     }
 }
 
-std::map<var, var> uva::networking::query_to_params(std::string_view query)
+std::map<var, var> uva::networking::query_to_params(std::string_view query, bool escape_plus)
 {
     std::map<var, var> params;
 
@@ -593,9 +593,11 @@ std::map<var, var> uva::networking::query_to_params(std::string_view query)
             if(query.starts_with('=')) {
                 query.remove_prefix(1);
                 break;
+            } else if(escape_plus && query.starts_with('+')) {
+                current_param_key.push_back(' ');
+            } else {
+                decode_char_from_web(query, current_param_key);
             }
-
-            decode_char_from_web(query, current_param_key);
         }
 
         while(query.size())
@@ -603,9 +605,11 @@ std::map<var, var> uva::networking::query_to_params(std::string_view query)
             if(query.starts_with('&')) {
                 query.remove_prefix(1);
                 break;
+            } else if(escape_plus && query.starts_with('+')) {
+                current_param_value.push_back(' ');
+            } else {
+                decode_char_from_web(query, current_param_value);
             }
-
-            decode_char_from_web(query, current_param_value);
         }
 
         params.insert({std::move(current_param_key), std::move(current_param_value)});

@@ -242,7 +242,7 @@ namespace uva
         void async_read_http_response(basic_socket& socket, http_message& response, asio::streambuf& buffer, std::function<void()> completation);
 
         void decode_char_from_web(std::string_view& sv, std::string& buffer);
-        std::map<var, var> query_to_params(std::string_view query);
+        std::map<var, var> query_to_params(std::string_view query, bool escape_plus = false);
     }; // namespace networking
     
 }; // namespace uva
