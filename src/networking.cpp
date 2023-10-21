@@ -96,15 +96,31 @@ void uva::networking::cleanup()
 
 static std::map<status_code, std::string> s_status_codes
 {
-    { (status_code)200, "OK" },
-    { (status_code)204, "No Content" },
-    { (status_code)302, "Moved" },
-    { (status_code)400, "Bad Request" },
-    { (status_code)401, "Unauthorized" },
-    { (status_code)404, "Not Found" },
-    { (status_code)413, "Payload Too Large" },
-    { (status_code)415, "Unsupported Media Type" },
-    { (status_code)500, "Internal Server Error" },
+    { status_code::ok, "OK" },
+    { status_code::created, "Created" },
+    { status_code::accepted, "Accepted" },
+    { status_code::no_content, "No Content" },
+    { status_code::moved_permanently, "Moved Permanently" },
+    { status_code::found, "Found" },
+    { status_code::see_other, "See Other" },
+    { status_code::not_modified, "Not Modified" },
+    { status_code::bad_request, "Bad Request" },
+    { status_code::unauthorized, "Unauthorized" },
+    { status_code::forbidden, "Forbidden" },
+    { status_code::not_found, "Not Found" },
+    { status_code::method_not_allowed, "Method Not Allowed" },
+    { status_code::request_timeout, "Request Timeout" },
+    { status_code::conflict, "Conflict" },
+    { status_code::gone, "Gone" },
+    { status_code::length_required, "Length Required" },
+    { status_code::precondition_failed, "Precondition Failed" },
+    { status_code::payload_too_large, "Payload Too Large" },
+    { status_code::unsupported_media_type, "Unsupported Media Type" },
+    { status_code::internal_server_error, "Internal Server Error" },
+    { status_code::not_implemented, "Not Implemented" },
+    { status_code::bad_gateway, "Bad Gateway" },
+    { status_code::service_unavailable, "Service Unavailable" },
+    { status_code::gateway_timeout, "Gateway Timeout" }
 };
 
 static std::map<content_type, std::string> s_content_types
