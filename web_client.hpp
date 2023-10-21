@@ -63,9 +63,13 @@ namespace uva
         private:
             void write_front_request();
         public:
-            void get (const std::string& route, std::map<var, var> params, std::map<var, var> headers, std::function<void(http_message)> on_success, std::function<void(error_code)> on_error = nullptr);
-            void post(const std::string& route, std::map<var, var> body,   std::map<var, var> headers, std::function<void(http_message)> on_success, std::function<void(error_code)> on_error = nullptr);
-            void post(const std::string& route, std::string body, content_type type, std::map<var, var> headers, std::function<void(http_message)> on_success, std::function<void(error_code)> on_error = nullptr);
+            void async_get (const std::string& route, var params, var headers, std::function<void(http_message)> on_success, std::function<void(error_code)> on_error = nullptr);
+            void async_post(const std::string& route, std::map<var, var> body,   std::map<var, var> headers, std::function<void(http_message)> on_success, std::function<void(error_code)> on_error = nullptr);
+            void async_post(const std::string& route, std::string body, content_type type, std::map<var, var> headers, std::function<void(http_message)> on_success, std::function<void(error_code)> on_error = nullptr);
+
+            http_message get(const std::string& route, var params = var::map(), var headers = var::map());
+            http_message post(const std::string& route, var body = var::map(), var headers = var::map());
+            http_message post(const std::string& route, std::string body, content_type type, var headers = var::map());
         public:
             virtual void on_connection_error(const uva::networking::error_code& ec);
         }; // class basic_web_client

@@ -54,7 +54,7 @@ uva::networking::basic_web_client::~basic_web_client()
 
 void uva::networking::basic_web_client::connect_if_is_not_open()
 {
-    if(!m_socket.is_open())
+    if(!m_socket || !m_socket.is_open())
     {
         error_code ec = m_socket.connect(m_protocol, m_host);
 
@@ -148,7 +148,7 @@ void uva::networking::basic_web_client::write_front_request()
     });
 }
 
-void uva::networking::basic_web_client::get(const std::string& route, std::map<var, var> params, std::map<var, var> headers, std::function<void(http_message)> on_success, std::function<void(error_code)> on_error)
+void uva::networking::basic_web_client::async_get(const std::string& route, var params, var headers, std::function<void(http_message)> on_success, std::function<void(error_code)> on_error)
 {
     http_message request;
     request.method = "GET";
@@ -161,7 +161,7 @@ void uva::networking::basic_web_client::get(const std::string& route, std::map<v
     enqueue_request(std::move(request), on_success, on_error);
 }
 
-void uva::networking::basic_web_client::post(const std::string &route, std::map<var, var> body, std::map<var, var> headers, std::function<void(http_message)> on_success, std::function<void(error_code)> on_error)
+void uva::networking::basic_web_client::async_post(const std::string &route, std::map<var, var> body, std::map<var, var> headers, std::function<void(http_message)> on_success, std::function<void(error_code)> on_error)
 {
     std::string content = json::enconde(std::move(body));
 
@@ -177,7 +177,7 @@ void uva::networking::basic_web_client::post(const std::string &route, std::map<
     enqueue_request(std::move(request), on_success, on_error);
 }
 
-void uva::networking::basic_web_client::post(const std::string &route, std::string body, content_type type, std::map<var, var> headers, std::function<void(http_message)> on_success, std::function<void(error_code)> on_error)
+void uva::networking::basic_web_client::async_post(const std::string &route, std::string body, content_type type, std::map<var, var> headers, std::function<void(http_message)> on_success, std::function<void(error_code)> on_error)
 {
     http_message request;
     request.method = "POST";
@@ -189,6 +189,27 @@ void uva::networking::basic_web_client::post(const std::string &route, std::stri
     request.host = m_host;
 
     enqueue_request(std::move(request), on_success, on_error);
+}
+
+http_message uva::networking::basic_web_client::get(const std::string& route, var params, var headers)
+{
+    std::promise<http_message> promise;
+    auto future = promise.get_future();
+
+    async_get(route, params, headers,
+        [&promise](http_message response) {
+            promise.set_value(response);
+        },
+        [&promise](error_code error) {
+            promise.set_exception(std::make_exception_ptr(std::runtime_error(std::format("HTTP request failed with error '{}'", error.message()))));
+        }
+    );
+
+    try {
+        return future.get();
+    } catch (std::exception e) {
+        throw e;
+    }
 }
 
 void uva::networking::basic_web_client::on_connection_error(const uva::networking::error_code &ec)

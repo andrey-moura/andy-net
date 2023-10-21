@@ -182,7 +182,7 @@ namespace uva
             basic_socket(asio::ip::tcp::socket&& __socket, const protocol& __protocol);
             basic_socket(basic_socket&& __socket);
             operator bool();
-            basic_socket() = default;
+            basic_socket();
             ~basic_socket();
         protected:
 #if __UVA_OPENSSL_FOUND__
@@ -215,6 +215,7 @@ namespace uva
             void read_exactly(char* buffer, size_t to_read);
             void read_exactly(std::string& buffer, size_t to_read);
             void async_read_exactly(asio::mutable_buffer buffer, size_t to_read, std::function<void(error_code, size_t)> completation);
+            void async_read_exactly(asio::streambuf& buffer, size_t to_read, std::function<void(error_code, size_t)> completation);
 
             uint8_t read_byte();
         };
@@ -231,7 +232,7 @@ namespace uva
         void cleanup();
 
         void async_read_http_request(basic_socket &socket, http_message& request, asio::streambuf& buffer, std::function<void()> completation);
-        void async_write_http_response(basic_socket& socket, const std::string& body, const status_code& status, const content_type& content_type, std::function<void (uva::networking::error_code &)> completation);
+        void async_write_http_response(basic_socket& socket, http_message& response, std::function<void (uva::networking::error_code &)> completation);
 
         /// @brief Asynchronous write an http request into the socket. 
         /// @param socket The socket to write to.
