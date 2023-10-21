@@ -21,7 +21,7 @@ include("${CMAKE_CURRENT_LIST_DIR}/networking/CMakeLists.txt")
 # samples
 include("${CMAKE_CURRENT_LIST_DIR}/samples/basic_web_client/CMakeLists.txt")
 
-target_link_libraries(uva-networking uva-binary)
+target_link_libraries(uva-networking uva-binary uva-time)
 
 if(OpenSSL)
 	include_directories(${OPENSSL_INCLUDE_DIR})
