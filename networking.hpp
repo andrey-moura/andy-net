@@ -17,7 +17,7 @@
 #include <core.hpp>
 
 #define BASIC_SOCKET_THROW_UNDEFINED_METHOD_FOR_PROTOCOL(__protocol) throw std::runtime_error(std::format("undefined method '{}' for {}", UVA_FUNCTION_NAME, __protocol));
-#define BASIC_SOCKET_THROW_UNDEFINED_METHOD_FOR_THIS_PROTOCOL() VAR_THROW_UNDEFINED_METHOD_FOR_TYPE(m_protocol)
+#define BASIC_SOCKET_THROW_UNDEFINED_METHOD_FOR_THIS_PROTOCOL() BASIC_SOCKET_THROW_UNDEFINED_METHOD_FOR_PROTOCOL(m_protocol)
 
 class web_connection;
 namespace uva
