@@ -1,31 +1,15 @@
 #pragma once
 
+#include <networking.hpp>
+
 #include <string>
 #include <sstream>
 #include <format.hpp>
 #include <deque>
-#include <deque>
 
-#ifdef _WIN32
-    #ifndef _WIN32_WINNT
-        #define _WIN32_WINNT 0x0A00
-    #endif
-#endif
-
-#define _WINSOCK_DEPRECATED_NO_WARNINGS
-#define ASIO_STANDALONE
-
-#include <asio.hpp>
-#include <asio/ts/buffer.hpp>
-#include <asio/ts/internet.hpp>
-
-#ifdef __UVA_OPENSSL_FOUND__
-    #include <asio/ssl.hpp>
-#endif
 #include <thread>
 
 #include <core.hpp>
-#include <networking.hpp>
 
 namespace uva
 {
