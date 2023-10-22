@@ -1,13 +1,18 @@
 #pragma once
 
+#include <asio.hpp>
+#include <asio/ts/buffer.hpp>
+#include <asio/ts/internet.hpp>
+
 #include <memory>
 #include <deque>
-
-#include <asio.hpp>
 
 #ifdef __UVA_OPENSSL_FOUND__
     #include <asio/ssl.hpp>
 #endif
+
+#include <memory>
+#include <deque>
 
 #include <core.hpp>
 
