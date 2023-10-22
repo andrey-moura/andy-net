@@ -388,7 +388,7 @@ void uva::networking::async_read_http_request(basic_socket &socket, http_message
             if(url_view.size()) {
                 request.params = query_to_params(url_view);
             } else {
-                request.params = empty_map;
+                request.params = var::map();
             }
 
             std::string endpoint = socket.remote_endpoint_string();
