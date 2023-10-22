@@ -1,6 +1,6 @@
+#include <networking.hpp>
 #include <web_client.hpp>
 
-#include <networking.hpp>
 #include <json.hpp>
 
 using namespace uva;
@@ -193,23 +193,25 @@ void uva::networking::basic_web_client::async_post(const std::string &route, std
 
 http_message uva::networking::basic_web_client::get(const std::string& route, var params, var headers)
 {
-    std::promise<http_message> promise;
-    auto future = promise.get_future();
+    // std::promise<http_message> promise;
+    // auto future = promise.get_future();
 
-    async_get(route, params, headers,
-        [&promise](http_message response) {
-            promise.set_value(response);
-        },
-        [&promise](error_code error) {
-            promise.set_exception(std::make_exception_ptr(std::runtime_error(std::format("HTTP request failed with error '{}'", error.message()))));
-        }
-    );
+    // async_get(route, params, headers,
+    //     [&promise](http_message response) {
+    //         promise.set_value(response);
+    //     },
+    //     [&promise](error_code error) {
+    //         promise.set_exception(std::make_exception_ptr(std::runtime_error(std::format("HTTP request failed with error '{}'", error.message()))));
+    //     }
+    // );
 
-    try {
-        return future.get();
-    } catch (std::exception e) {
-        throw e;
-    }
+    // try {
+    //     return future.get();
+    // } catch (std::exception e) {
+    //     throw e;
+    // }
+
+    return http_message();
 }
 
 void uva::networking::basic_web_client::on_connection_error(const uva::networking::error_code &ec)
