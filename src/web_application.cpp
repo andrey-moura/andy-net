@@ -1,3 +1,5 @@
+#include <networking.hpp>
+
 #include <thread>
 #include <map>
 #include <iostream>
@@ -6,13 +8,6 @@
 #include <atomic>
 #include <deque>
 
-#include <asio.hpp>
-
-#ifdef __UVA_OPENSSL_FOUND__
-    #include <asio/ssl.hpp>
-#endif
-
-#include <networking.hpp>
 #include <web_application.hpp>
 #include <file.hpp>
 #include <console.hpp>
@@ -653,10 +648,10 @@ void component_render(std::string_view keyword_open, std::string_view keyword_at
     auto component_path = app_dir / "app" / "views" / "components" / component_name;
     component_path.replace_extension(".cpp.html");
 
-    std::string component_path_string = component_path;
+    std::string component_path_string = component_path.string();
 
-    if(std::filesystem::exists(component_path_string)) {
-        std::string component = format_html_file(component_path, locals);
+    if(std::filesystem::exists(component_path)) {
+        std::string component = format_html_file(component_path_string, locals);
         output_html.append(component);
     } else {
         //exception
