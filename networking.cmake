@@ -62,7 +62,7 @@ function(add_web_app name)
 
             add_executable(${job_executable} ${job_source_files})
             target_link_libraries(${job_executable} uva-job uva-console uva-json uva-database uva-networking)
-            target_compile_definitions(${job_executable} PUBLIC -D__UVA_JOB_COMPILATION__=1)
+            target_compile_definitions(${job_executable} PRIVATE -D__UVA_JOB_COMPILATION__=1)
 
             add_dependencies(${name} ${job_executable})
         endforeach()
