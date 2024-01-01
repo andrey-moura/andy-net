@@ -56,15 +56,25 @@ namespace uva
             /* updates here must reflect on s_content_types */
             application_json,
             application_javascript,
+            application_xml,
+            application_xhtml_xml,
             image_png,
             image_jpeg,
-            image_svg_xml,
+            image_gif,
+            image_webp,
+            text_plain,
             text_html,
             text_css,
+            text_javascript,
+            text_xml,
+            text_markdown,
             video_mp4,
-            video_mpd,
-            video_m4s,
-            image_gif,
+            video_webm,
+            video_ogg,
+            audio_mp3,
+            audio_mpeg,
+            audio_ogg,
+            x_www_form_urlencoded
         };
         const std::string& content_type_to_string(const content_type& status);
         content_type content_type_from_string(const std::string& status);
