@@ -36,5 +36,7 @@ endif()
 
 #Tests
 
-#Create tests for parent project
-cspec_configure("uva-networking" ${CMAKE_CURRENT_LIST_DIR} "uva-networking")
+if(TARGET cspec)
+	#Create tests for parent project
+	cspec_configure("uva-networking" ${CMAKE_CURRENT_LIST_DIR} "uva-networking")
+endif()
