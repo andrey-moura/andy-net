@@ -14,7 +14,7 @@
 #include <memory>
 #include <deque>
 
-#include <core.hpp>
+#include <uva/core.hpp>
 
 #define BASIC_SOCKET_THROW_UNDEFINED_METHOD_FOR_PROTOCOL(__protocol) throw std::runtime_error(std::format("undefined method '{}' for {}", UVA_FUNCTION_NAME, __protocol));
 #define BASIC_SOCKET_THROW_UNDEFINED_METHOD_FOR_THIS_PROTOCOL() BASIC_SOCKET_THROW_UNDEFINED_METHOD_FOR_PROTOCOL(m_protocol)

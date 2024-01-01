@@ -3,8 +3,8 @@
 #include <iostream>
 
 #include <console.hpp>
-#include <json.hpp>
-#include <binary.hpp>
+#include <uva/json.hpp>
+#include <uva/binary.hpp>
 
 using namespace uva;
 using namespace networking;

@@ -9,7 +9,7 @@
 
 #include <thread>
 
-#include <core.hpp>
+#include <uva/core.hpp>
 
 namespace uva
 {

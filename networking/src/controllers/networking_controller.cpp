@@ -104,7 +104,7 @@ R"~~~(#include <{}_controller.hpp>
 
 #include <console.hpp>
 #include <file.hpp>
-#include <core.hpp>
+#include <uva/core.hpp>
 
 )~~~";
 

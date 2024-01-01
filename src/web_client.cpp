@@ -1,7 +1,7 @@
 #include <networking.hpp>
 #include <web_client.hpp>
 
-#include <json.hpp>
+#include <uva/json.hpp>
 
 using namespace uva;
 using namespace networking;
