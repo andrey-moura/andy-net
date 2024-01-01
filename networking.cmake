@@ -61,7 +61,7 @@ function(add_web_app name)
             )
 
             add_executable(${job_executable} ${job_source_files})
-            target_link_libraries(${job_executable} uva-job uva-console uva-json uva-database uva-networking)
+            target_link_libraries(${job_executable} uva-job uva-console uva-json uva-db uva-networking)
             target_compile_definitions(${job_executable} PRIVATE -D__UVA_JOB_COMPILATION__=1)
 
             add_dependencies(${name} ${job_executable})
@@ -72,8 +72,8 @@ function(add_web_app name)
         message(STATUS "Job will be ignored because uva-job is not available")
     endif()
 
-    if (TARGET uva-database)
-        target_link_libraries(${name} uva-database)
+    if (TARGET uva-db)
+        target_link_libraries(${name} uva-db)
     endif()
     
     target_compile_definitions(${name} PUBLIC -DAPP_ROOT="${CMAKE_CURRENT_LIST_DIR}")
@@ -82,6 +82,6 @@ function(add_web_app name)
         target_link_options(${name} PUBLIC /SAFESEH:NO)
     endif()
 
-    target_link_libraries(${name} uva-json uva-networking uva-job uva-database)
+    target_link_libraries(${name} uva-json uva-networking uva-job uva-db)
     
 endfunction(add_web_app)
