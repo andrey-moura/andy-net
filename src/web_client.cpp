@@ -148,7 +148,7 @@ void uva::networking::basic_web_client::write_front_request()
     });
 }
 
-void uva::networking::basic_web_client::async_get(const std::string& route, var params, var headers, std::function<void(http_message)> on_success, std::function<void(error_code)> on_error)
+void uva::networking::basic_web_client::async_get(const std::string& route, var::map_type params, var::map_type headers, std::function<void(http_message)> on_success, std::function<void(error_code)> on_error)
 {
     http_message request;
     request.method = "GET";
@@ -191,27 +191,26 @@ void uva::networking::basic_web_client::async_post(const std::string &route, std
     enqueue_request(std::move(request), on_success, on_error);
 }
 
-http_message uva::networking::basic_web_client::get(const std::string& route, var params, var headers)
+http_message uva::networking::basic_web_client::get(const std::string& route, var::map_type params, var::map_type headers)
 {
-    // std::promise<http_message> promise;
-    // auto future = promise.get_future();
+    std::promise<http_message> promise;
+    auto future = promise.get_future();
 
-    // async_get(route, params, headers,
-    //     [&promise](http_message response) {
-    //         promise.set_value(response);
-    //     },
-    //     [&promise](error_code error) {
-    //         promise.set_exception(std::make_exception_ptr(std::runtime_error(std::format("HTTP request failed with error '{}'", error.message()))));
-    //     }
-    // );
+    async_get(route, params, headers,
+        [&promise](http_message response) {
+            promise.set_value(std::move(response));
+        },
+        [&promise](error_code error) {
+            promise.set_exception(std::make_exception_ptr(std::runtime_error(std::format("HTTP request failed with error '{}'", error.message()))));
+        }
+    );
 
-    // try {
-    //     return future.get();
-    // } catch (std::exception e) {
-    //     throw e;
-    // }
-
-    return http_message();
+    try {
+        http_message message_to_return = std::move(future.get());
+        return message_to_return;
+    } catch (const std::exception& e) {
+        throw e;
+    }
 }
 
 void uva::networking::basic_web_client::on_connection_error(const uva::networking::error_code &ec)

@@ -125,17 +125,27 @@ static std::map<status_code, std::string> s_status_codes
 
 static std::map<content_type, std::string> s_content_types
 {
-    { content_type::text_html,              "text/html" },
-    { content_type::image_jpeg,             "image/jpeg" },
-    { content_type::image_png,              "image/png" },
-    { content_type::text_css,               "text/css" },
     { content_type::application_json,       "application/json" },
     { content_type::application_javascript, "application/javascript" },
-    { content_type::video_mp4,              "video/mp4" },
-    { content_type::video_m4s,              "video/m4s" },
-    { content_type::image_gif,              "image/gif" },
-    { content_type::image_gif,              "image/gif" },
-    { content_type::image_svg_xml,          "image/svg+xml" },
+    { content_type::application_xml,        "application/xml" },
+    { content_type::application_xhtml_xml,  "application/xhtml+xml" },
+    { content_type::x_www_form_urlencoded,  "application/x_www_form_urlencoded" },
+    { content_type::image_png,             "image/png" },
+    { content_type::image_jpeg,            "image/jpeg" },
+    { content_type::image_gif,             "image/gif" },
+    { content_type::image_webp,            "image/webp" },
+    { content_type::text_plain,            "text/plain" },
+    { content_type::text_html,             "text/html" },
+    { content_type::text_css,              "text/css" },
+    { content_type::text_javascript,       "text/javascript" },
+    { content_type::text_xml,              "text/xml" },
+    { content_type::text_markdown,         "text/markdown" },
+    { content_type::video_mp4,             "video/mp4" },
+    { content_type::video_webm,            "video/webm" },
+    { content_type::video_ogg,             "video/ogg" },
+    { content_type::audio_mp3,             "audio/mp3" },
+    { content_type::audio_mpeg,            "audio/mpeg" },
+    { content_type::audio_ogg,             "audio/ogg" },
 };
 
 static std::string s_server_version = "0.0.1";
@@ -160,6 +170,8 @@ const std::string& uva::networking::content_type_to_string(const content_type& t
     return it->second;
 }
 
+std::map<std::string, content_type> s_content_types_names;
+
 content_type uva::networking::content_type_from_string(const std::string &content_type)
 {
     std::string actual_content_type;
@@ -175,13 +187,39 @@ content_type uva::networking::content_type_from_string(const std::string &conten
         ++str;
     }
 
-    for(auto & content : s_content_types) {
-        if(content.second == actual_content_type) {
-            return content.first;
+    //generate s_content_types_names on demand
+    if(s_content_types_names.empty()) {
+        for(auto & content : s_content_types) {
+            s_content_types_names.insert({content.second, content.first});
         }
     }
 
-    throw std::runtime_error(std::format("error: {} is not a valid content_type.", actual_content_type));
+    auto it = s_content_types_names.find(actual_content_type);
+
+    if(it == s_content_types_names.end()) {    
+        throw std::runtime_error(std::format("error: {} is not a valid content_type.", actual_content_type));
+    }
+
+    return it->second;
+}
+
+void decode_http_message_body_content_type(http_message& message)
+{
+    var Content_Type = message.headers["Content-Type"];
+
+    if(Content_Type.is_a<var::string>()) {
+        content_type ct = content_type_from_string(Content_Type.as<var::string>());
+
+        switch(ct)
+        {
+            case content_type::application_json:
+                message.params = json::decode(message.raw_body);
+            break;
+            case content_type::x_www_form_urlencoded: 
+                message.params = query_to_params(message.raw_body);
+            break;
+        }
+    }
 }
 
 const char* standard_time_format()
@@ -308,14 +346,17 @@ void async_read_body(basic_socket &socket, asio::streambuf& buffer, size_t alrea
                     // Last chunk; body fully read.
                     completation(ec, already_read);
                 } else {
+                    size_t remaining = std::max(buffer.size(), chunk_size) - std::min(buffer.size(), chunk_size);
+
                     // Read the chunk data.
-                    socket.async_read_exactly(buffer, chunk_size + 2,  // Include '\r\n'.
+                    socket.async_read_exactly(buffer, remaining + 2,  // Include '\r\n'.
                         [&, chunk_size, completation](const error_code& ec, size_t bytes_transferred) {
                             if (!ec) {
+                                size_t old_body_size = body.size();
+                                body.resize(old_body_size + chunk_size);
+
                                 std::istream chunk_stream(&buffer);
-                                std::string chunk_data(chunk_size, '\0');
-                                chunk_stream.read(&chunk_data[0], chunk_size);
-                                body += chunk_data;
+                                chunk_stream.read(body.data() + old_body_size, chunk_size);
 
                                 // Discard '\r\n'.
                                 char crlf[2];
@@ -406,13 +447,7 @@ void uva::networking::async_read_http_request(basic_socket &socket, http_message
 
             async_read_body(socket, buffer, s, request.raw_body, request.headers, [&request, completation](error_code ec, size_t) {
                 if(request.method == "POST") {
-
-                    std::string content_type = request.headers["Content-Type"];
-                    if(content_type.starts_with("application/json")) {
-                        request.params = json::decode(request.raw_body);
-                    } else if(content_type.starts_with("application/x-www-form-urlencoded")) {
-                        request.params = query_to_params(request.raw_body);
-                    }
+                    decode_http_message_body_content_type(request);
                 }
 
                 completation();
@@ -540,6 +575,13 @@ void uva::networking::async_read_http_response(basic_socket& socket, http_messag
                 response.status_msg.pop_back();
             }
 
+            size_t prefix = 0;
+            while(response.status_msg.size() && isspace(response.status_msg[prefix])) ++prefix;
+
+            if(prefix) {
+                response.status_msg = response.status_msg.substr(prefix);
+            }
+
             response.status = (status_code)status;
             response.headers = parse_headers(request_stream);
             response.params = var::map();
@@ -547,11 +589,7 @@ void uva::networking::async_read_http_response(basic_socket& socket, http_messag
             response.type = content_type_from_string(response.headers.fetch("Content-Type"));
 
             async_read_body(socket, buffer, s, response.raw_body, response.headers, [&response, completation](uva::networking::error_code ec, size_t){
-                var content_type = response.headers.fetch("Content-Type");
-
-                if(content_type == "application/json") {
-                    response.params = uva::json::decode(response.raw_body);
-                }
+                decode_http_message_body_content_type(response);
 
                 if(completation) {
                     completation();
