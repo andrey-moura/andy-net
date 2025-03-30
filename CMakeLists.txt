@@ -1,35 +1,28 @@
 #Require a minimum version
 cmake_minimum_required(VERSION 3.10)
 
-project(uva-networking)
+project(andy-net)
 
-add_library(uva-networking
-	${CMAKE_CURRENT_LIST_DIR}/src/web_application.cpp
-	${CMAKE_CURRENT_LIST_DIR}/src/web_client.cpp
-	${CMAKE_CURRENT_LIST_DIR}/src/networking.cpp
+set(ANDY_NET_SOURCES
+	${CMAKE_CURRENT_LIST_DIR}/src/http.cpp
 )
 
-include_directories(${CMAKE_CURRENT_LIST_DIR})
-include_directories("${CMAKE_CURRENT_LIST_DIR}/include/asio/asio/include")
+add_library(andy-net OBJECT
+	${ANDY_NET_SOURCES}
+)
 
-set(NETWORKING_ROOT_DIR ${CMAKE_CURRENT_LIST_DIR})
-
-# tools
-include("${CMAKE_CURRENT_LIST_DIR}/networking/CMakeLists.txt")
-
-# samples
-include("${CMAKE_CURRENT_LIST_DIR}/samples/basic_web_client/CMakeLists.txt")
+find_package(Threads REQUIRED)
+# target_link_libraries(andy-net ${CMAKE_THREAD_LIBS_INIT})
 
 find_package(OpenSSL REQUIRED)
 include_directories(${OPENSSL_INCLUDE_DIR})
+# target_link_libraries(andy-net ${OPENSSL_LIBRARIES})
 
-target_link_libraries(uva-networking ${OPENSSL_LIBRARIES} uva-binary)
+include_directories(${CMAKE_CURRENT_LIST_DIR}/include)
+include_directories(${CMAKE_CURRENT_LIST_DIR}/modules/asio/asio/include)
 
 if(WIN32)
 	get_filename_component(OPENSSL_ROOT ${OPENSSL_INCLUDE_DIR} DIRECTORY)
 endif()
 
-#Tests
-
-#Create tests for parent project
-cspec_configure("uva-networking" ${CMAKE_CURRENT_LIST_DIR} "uva-networking")
+andy_tests_configure(andy-net)
