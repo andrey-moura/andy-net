@@ -15,11 +15,15 @@ add_library(andy-net OBJECT
 )
 
 find_package(Threads REQUIRED)
-# target_link_libraries(andy-net ${CMAKE_THREAD_LIBS_INIT})
+
+set(ANDY_NET_LIBRARIES
+	${CMAKE_THREAD_LIBS_INIT}
+)
+
+find_package(Threads REQUIRED)
 
 find_package(OpenSSL REQUIRED)
 include_directories(${OPENSSL_INCLUDE_DIR})
-# target_link_libraries(andy-net ${OPENSSL_LIBRARIES})
 
 include_directories(${CMAKE_CURRENT_LIST_DIR}/include)
 include_directories(${CMAKE_CURRENT_LIST_DIR}/modules/asio/asio/include)

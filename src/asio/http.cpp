@@ -145,7 +145,7 @@ namespace andy
                     if (key_end != header_line.npos)
                     {
                         std::string_view key(res.header_lines.back().data(), key_end);
-                        std::string_view value(res.header_lines.back().data() + key_end + 2, res.header_lines.back().data() + res.header_lines.back().size());
+                        std::string_view value(res.header_lines.back().data() + key_end + 2, res.header_lines.back().size() - key_end - 2);
                         res.headers[key] = value;
                     }
                     // Next header line

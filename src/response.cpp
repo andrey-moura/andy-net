@@ -19,9 +19,7 @@ namespace andy
 
             std::string_view response::text()
             {
-                std::string_view content_type = headers["Content-Type"];
-
-                if(!content_type.starts_with("text/plain") && !content_type.starts_with("text/html"))
+                if(!is_text())
                 {
                     throw std::runtime_error("Trying to access response body as text, but Content-Type is not text/plain or text/html");
                 }
