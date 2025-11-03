@@ -5,6 +5,7 @@
 #include <vector>
 #include <map>
 #include <functional>
+#include <cstdint>
 
 namespace andy
 {
