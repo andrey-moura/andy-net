@@ -20,16 +20,15 @@ if(ANDY_NET_BACKEND)
 	add_library(andy-net OBJECT
 		${ANDY_NET_SOURCES}
 	)
+
+	find_package(Threads REQUIRED)
+
+	target_link_libraries(andy-net ${CMAKE_DL_LIBS} Threads::Threads)
 endif()
-
-
-find_package(Threads REQUIRED)
 
 set(ANDY_NET_LIBRARIES
 	${CMAKE_THREAD_LIBS_INIT}
 )
-
-find_package(Threads REQUIRED)
 
 # find_package(OpenSSL QUIET)
 # include_directories(${OPENSSL_INCLUDE_DIR})
