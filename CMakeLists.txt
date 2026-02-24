@@ -23,7 +23,7 @@ if(ANDY_NET_BACKEND)
 
 	find_package(Threads REQUIRED)
 
-	target_link_libraries(andy-net ${CMAKE_DL_LIBS} Threads::Threads)
+	target_link_libraries(andy-net PUBLIC ${CMAKE_DL_LIBS} Threads::Threads)
 endif()
 
 set(ANDY_NET_LIBRARIES
@@ -38,7 +38,7 @@ include_directories(${CMAKE_CURRENT_LIST_DIR}/modules/asio/asio/include)
 
 if(WIN32)
 	get_filename_component(OPENSSL_ROOT ${OPENSSL_INCLUDE_DIR} DIRECTORY)
-    target_link_libraries(andy-net ws2_32)
+    target_link_libraries(andy-net PUBLIC ws2_32)
 endif()
 
 if(ANDY_NET_BACKEND)
