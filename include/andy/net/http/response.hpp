@@ -18,7 +18,7 @@ namespace andy
 public:
                 response() = default;
                 response(response&& other);
-                ~response() = default;
+                ~response();
 public:
                 int status_code;
                 std::string status_text;

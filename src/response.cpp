@@ -17,6 +17,10 @@ namespace andy
                 raw_body = std::move(other.raw_body);
             }
 
+            response::~response()
+            {
+            }
+
             std::string_view response::text()
             {
                 if(!is_text())
