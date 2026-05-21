@@ -7,7 +7,7 @@
 #include <functional>
 #include <cstdint>
 
-namespace andy
+namespace lavi
 {
     namespace net
     {

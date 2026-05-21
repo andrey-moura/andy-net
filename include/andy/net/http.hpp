@@ -4,7 +4,7 @@
 
 #include <andy/net/http/response.hpp>
 
-namespace andy
+namespace lavi
 {
     namespace net
     {

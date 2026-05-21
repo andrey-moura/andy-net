@@ -11,7 +11,7 @@
 
 #include <asio.hpp>
 
-namespace andy
+namespace lavi
 {
     namespace net
     {
