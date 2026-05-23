@@ -24,6 +24,9 @@ if(ANDY_NET_BACKEND)
 	find_package(Threads REQUIRED)
 
 	target_link_libraries(andy-net PUBLIC ${CMAKE_DL_LIBS} Threads::Threads)
+	if(MINGW)
+		target_link_libraries(andy-net PUBLIC ws2_32 mswsock)
+	endif()
 endif()
 
 set(ANDY_NET_LIBRARIES
